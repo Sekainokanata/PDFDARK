@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Invert PDF Viewer",
+  "version": "0.1",
+  "description": "PDFの背景を黒、黒文字を白にして表示（画像保持）",
+  "permissions": ["contextMenus", "activeTab", "scripting", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Open PDF with Invert Viewer"
+  },
+  "icons": {
+    "48": "icon48.png"
+  }
+}

@@ -1,0 +1,20 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Invert PDF Viewer</title>
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <div id="container">Loading PDF…</div>
+
+  <!-- 1) pdf.js 本体（UMDビルドならこれで global pdfjsLib が定義される） -->
+  <script src="pdfjs/pdf.js"></script>
+
+  <!-- 2) viewer.js: startViewer() を定義 -->
+  <script src="viewer.js"></script>
+
+  <!-- 3) viewer-run.js: workerSrc 設定 & startViewer 実行 -->
+  <script src="viewer-run.js"></script>
+</body>
+</html>
