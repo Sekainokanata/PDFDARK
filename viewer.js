@@ -416,12 +416,26 @@ async function startViewer() {
 
       // 画像を高品質で処理（重いので await）
       await processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
+
+      //////テキスト用デバッガー
+        const textContent = await page.getTextContent();
+        console.log('Text content items sample:', textContent.items.slice(0,10).map(i => i.str));
+        function looksGood(tc) {
+          const sample = tc.items.slice(0,20).map(i => i.str).join('');
+          // 簡易判定: 英数字or日本語の文字が含まれるか
+          return /[0-9A-Za-z\u3000-\u30FF\u4E00-\u9FFF]/.test(sample);
+        }
+        console.log('looksGood:', looksGood(textContent));
+
+      //////
+      
     } catch (err) {
       console.error('Error rendering page', p, err);
       const errDiv = document.createElement('div');
       errDiv.textContent = `Error rendering page ${p}: ${err.message || err}`;
       container.appendChild(errDiv);
     }
+    
   }
 
   // スクロールトップ
