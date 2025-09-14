@@ -1,6 +1,5 @@
-// viewer.js
-// 必須: pdf.js (UMD) を viewer.html で先に読み込んでおくこと。
-// Expects: pdfjsLib global exists, viewer-run.js will call startViewer().
+// viewer.js (高品質画像反転フロー組み込み済み)
+// 前提: pdfjsLib が global に存在すること、viewer-run.js で workerSrc を設定しておくこと
 
 async function startViewer() {
   const params = new URLSearchParams(location.search);
@@ -10,7 +9,7 @@ async function startViewer() {
     return;
   }
 
-  // fetch PDF (拡張の host_permissions が必要)
+  // fetch PDF
   let resp;
   try {
     resp = await fetch(file);
@@ -28,15 +27,12 @@ async function startViewer() {
   container.innerHTML = '';
 
   // ----------------------------
-  // ヘルパー関数群
+  // ヘルパー関数群（parse / 色判定 / SVG反転）
   // ----------------------------
-
-  // parseColor: '#fff', '#ffffff', 'rgb(...)', 'rgba(...)', 'black','white' を扱う
   function parseColor(str) {
     if (!str) return null;
     str = String(str).trim().toLowerCase();
     if (str === 'none') return null;
-    // hex
     const hexMatch = str.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
     if (hexMatch) {
       let hex = hexMatch[1];
@@ -44,7 +40,6 @@ async function startViewer() {
       const num = parseInt(hex, 16);
       return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255, a: 1 };
     }
-    // rgb(a)
     const rgbMatch = str.match(/^rgba?\(([^)]+)\)$/);
     if (rgbMatch) {
       const parts = rgbMatch[1].split(',').map(s => s.trim());
@@ -54,19 +49,11 @@ async function startViewer() {
       const a = parts[3] !== undefined ? parseFloat(parts[3]) : 1;
       return { r, g, b, a };
     }
-    // keywords (最小限)
-    const kw = {
-      black: { r: 0, g: 0, b: 0, a: 1 },
-      white: { r: 255, g: 255, b: 255, a: 1 },
-      gray: { r: 128, g: 128, b: 128, a: 1 },
-      grey: { r: 128, g: 128, b: 128, a: 1 }
-    };
+    const kw = { black: { r: 0, g: 0, b: 0, a: 1 }, white: { r: 255, g: 255, b: 255, a: 1 }, gray: { r: 128, g: 128, b: 128, a: 1 }, grey: { r: 128, g: 128, b: 128, a: 1 } };
     if (kw[str]) return kw[str];
-    // それ以外（currentColor, url(...), gradientなど）は null を返す（処理で補う）
     return null;
   }
 
-  // sRGB -> linear conversion for luminance
   function srgbToLinearChannel(c) {
     const v = c / 255;
     return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
@@ -82,7 +69,6 @@ async function startViewer() {
     return lum > 0.5 ? '#000000' : '#ffffff';
   }
 
-  // rgb -> hsl (for saturation)
   function rgbToHsl(r, g, b) {
     r /= 255; g /= 255; b /= 255;
     const max = Math.max(r, g, b), min = Math.min(r, g, b);
@@ -100,7 +86,6 @@ async function startViewer() {
     return { h, s, l };
   }
 
-  // isColored: 彩度ベース判定（デフォルト閾値 satThreshold = 0.15）
   function isColored(rgb, options = {}) {
     if (!rgb) return false;
     const method = options.method || 'saturation';
@@ -112,7 +97,6 @@ async function startViewer() {
     return false;
   }
 
-  // グラデーション（stop）を見て「色付きか」を判定
   function gradientIsColored(gradElem, options = {}) {
     if (!gradElem) return false;
     const stops = gradElem.querySelectorAll('stop');
@@ -125,7 +109,6 @@ async function startViewer() {
     return false;
   }
 
-  // スマートな SVG 色反転（テキストやパスを対象、グラデはstop単位で判断）
   function invertSvgColorsSmart(svg, options = {}) {
     const gradientMap = new Map();
     const gradients = svg.querySelectorAll('linearGradient, radialGradient');
@@ -143,7 +126,6 @@ async function startViewer() {
       const tag = el.tagName.toLowerCase();
       if (tag === 'image') return;
 
-      // fill の判定
       let fillAttr = el.getAttribute('fill');
       let fillIsGradient = false;
       if (fillAttr && fillAttr.trim().startsWith('url(')) fillIsGradient = true;
@@ -169,7 +151,6 @@ async function startViewer() {
         }
       }
 
-      // stroke の判定
       let strokeAttr = el.getAttribute('stroke');
       let strokeColor = null;
       if (strokeAttr && strokeAttr !== 'currentColor' && strokeAttr !== 'none') strokeColor = parseColor(strokeAttr);
@@ -182,9 +163,8 @@ async function startViewer() {
         if (cs && cs.stroke) strokeColor = parseColor(cs.stroke);
       }
 
-      // 適用ルール
       if (fillColor && fillColor.keep) {
-        // グラデが色付きなので何もしない
+        // nothing
       } else {
         if (fillColor) {
           if (!isColored(fillColor, options)) {
@@ -217,29 +197,31 @@ async function startViewer() {
       }
     });
 
-    // SVG 全体の背景を黒に
     svg.style.background = '#000';
   }
 
   // ----------------------------
-  // 画像処理：低彩度画像は反転する
+  // 高品質画像反転フロー
+  // - 判定は縮小サンプルで軽く
+  // - 反転は可能なら元解像度で（アンプレマルチ→反転→再マルチ）
+  // - 出力は toBlob + createObjectURL（メモリ効率よし）
   // ----------------------------
-  // options:
-  //  imageSatThreshold: 彩度閾値（例 0.08）
-  //  sampleStep: サンプリング間隔（大きいほど軽い）
-  //  maxSize: キャンバス最大辺サイズ（縮小して処理）
-  async function processSvgImages(svgRoot, options = {}) {
+  const objectUrlMap = new Map(); // imgEl -> { url, revokeOnNext }
+
+  async function processSvgImagesHighQuality(svgRoot, options = {}) {
     const imageSatThreshold = options.imageSatThreshold ?? 0.08;
+    const sampleMax = options.sampleMax ?? 200; // サンプル用最大幅（小さめでサンプリング）
     const sampleStep = options.sampleStep ?? 6;
-    const maxSize = options.maxSize ?? 800;
+    const maxFullSizeForInvert = options.maxFullSizeForInvert ?? 2500; // フル処理する最大辺（調整推奨）
 
     const images = Array.from(svgRoot.querySelectorAll('image'));
     for (const imgEl of images) {
       try {
+        // href 取得（xlink 対応）
         let href = imgEl.getAttribute('href') || imgEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || imgEl.getAttribute('xlink:href');
         if (!href) continue;
 
-        // fetch blob (data: も fetch で処理できる)
+        // fetch blob (data: も fetch で OK)
         let blob;
         try {
           const respImg = await fetch(href);
@@ -250,90 +232,178 @@ async function startViewer() {
           continue;
         }
 
-        // createImageBitmap で取り扱い
+        // createImageBitmap（縮小オプションを使って高品質にリサイズ可能）
         let bitmap;
         try {
-          bitmap = await createImageBitmap(blob);
+          // サンプリング用に縮小ビットマップを作る（高速）
+          // まず簡易 bitmap で元サイズ確認
+          const tmpBitmap = await createImageBitmap(blob);
+          const sampScale = Math.min(1, sampleMax / Math.max(tmpBitmap.width || 1, tmpBitmap.height || 1));
+          const sampW = Math.max(1, Math.floor((tmpBitmap.width || 1) * sampScale));
+          const sampH = Math.max(1, Math.floor((tmpBitmap.height || 1) * sampScale));
+          // 高品質リサイズを使って縮小 bitmap を作る（ブラウザに任せる）
+          bitmap = await createImageBitmap(tmpBitmap, { resizeWidth: sampW, resizeHeight: sampH, resizeQuality: 'high' });
+          tmpBitmap.close?.();
         } catch (e) {
-          console.warn('createImageBitmap failed (CORS/format?)', e);
+          console.warn('createImageBitmap(sampling) failed', e);
           continue;
         }
 
-        // 縮小してキャンバスに描画
-        const scale = Math.min(1, maxSize / Math.max(bitmap.width || 1, bitmap.height || 1));
-        const w = Math.max(1, Math.floor((bitmap.width || 1) * scale));
-        const h = Math.max(1, Math.floor((bitmap.height || 1) * scale));
+        // サンプリングして平均彩度を計算
+        const sW = bitmap.width, sH = bitmap.height;
+        const sampCanvas = document.createElement('canvas');
+        sampCanvas.width = sW; sampCanvas.height = sH;
+        const sctx = sampCanvas.getContext('2d');
+        sctx.imageSmoothingEnabled = true;
+        sctx.imageSmoothingQuality = 'high';
+        sctx.drawImage(bitmap, 0, 0, sW, sH);
 
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(bitmap, 0, 0, w, h);
-
-        // getImageData（CORSでtaintedの可能性あり）
         let imgData;
         try {
-          imgData = ctx.getImageData(0, 0, w, h);
+          imgData = sctx.getImageData(0, 0, sW, sH);
         } catch (e) {
-          console.warn('getImageData failed (tainted canvas?), skipping image:', e);
+          console.warn('getImageData failed on sample (tainted?), skipping image', e);
           bitmap.close?.();
           continue;
         }
         const data = imgData.data;
         let count = 0, sumSat = 0;
-        for (let y = 0; y < h; y += sampleStep) {
-          for (let x = 0; x < w; x += sampleStep) {
-            const i = (y * w + x) * 4;
-            const r = data[i], g = data[i + 1], b = data[i + 2];
-            const s = (() => {
-              const rn = r / 255, gn = g / 255, bn = b / 255;
-              const mx = Math.max(rn, gn, bn), mn = Math.min(rn, gn, bn);
-              const l = (mx + mn) / 2;
-              if (mx === mn) return 0;
-              const d = mx - mn;
-              return l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
-            })();
+        for (let y = 0; y < sH; y += sampleStep) {
+          for (let x = 0; x < sW; x += sampleStep) {
+            const i = (y * sW + x) * 4;
+            const r = data[i], g = data[i+1], b = data[i+2];
+            const rn = r/255, gn = g/255, bn = b/255;
+            const mx = Math.max(rn, gn, bn), mn = Math.min(rn, gn, bn);
+            const l = (mx + mn)/2;
+            const s = (mx === mn) ? 0 : (l > 0.5 ? (mx - mn) / (2 - mx - mn) : (mx - mn) / (mx + mn));
             sumSat += s;
             count++;
           }
         }
         const avgSat = count > 0 ? (sumSat / count) : 0;
+        bitmap.close?.();
 
-        if (avgSat < imageSatThreshold) {
-          // 反転: RGB -> 255 - RGB
-          for (let i = 0; i < data.length; i += 4) {
-            data[i] = 255 - data[i];
-            data[i + 1] = 255 - data[i + 1];
-            data[i + 2] = 255 - data[i + 2];
-            // alphaはそのまま
+        // 色付きなら CSS filter 適用の方が軽い（今回は「無彩色のみ反転」が目的）
+        if (avgSat >= imageSatThreshold) {
+          // カラフル画像：維持（可能なら以前の objectURL を revoke）
+          const prev = objectUrlMap.get(imgEl);
+          if (prev && prev.url) {
+            // もし以前に object URL を作って置き換えていたら revoke
+            if (prev.revokeOnNext && prev.url.startsWith('blob:')) URL.revokeObjectURL(prev.url);
+            objectUrlMap.delete(imgEl);
           }
-          ctx.putImageData(imgData, 0, 0);
-          const newDataUrl = canvas.toDataURL('image/png');
-          imgEl.setAttribute('href', newDataUrl);
-          imgEl.setAttributeNS('http://www.w3.org/1999/xlink', 'href', newDataUrl);
+          continue;
         }
 
-        bitmap.close?.();
+        // 無彩色判定：**反転処理を元解像度で行う**
+        // まず元 bitmap を作る（ただし巨大すぎる場合は上限を設ける）
+        let fullBitmap;
+        try {
+          // 元サイズ取得（再 createImageBitmap）
+          const proto = await createImageBitmap(blob);
+          const fullW = proto.width || 1, fullH = proto.height || 1;
+          // 制限を超える場合はフルサイズ反転を避ける（代わりに CSS filter を使うか縮小反転）
+          if (Math.max(fullW, fullH) > maxFullSizeForInvert) {
+            // 重いので CSS filter を適用して代替（低コスト・見た目ほぼ同等）
+            imgEl.style.filter = 'invert(1)';
+            proto.close?.();
+            continue;
+          }
+          // createImageBitmap でフルサイズ bitmap（高品質）
+          fullBitmap = await createImageBitmap(proto);
+          proto.close?.();
+        } catch (e) {
+          console.warn('createImageBitmap(full) failed, falling back to CSS filter', e);
+          imgEl.style.filter = 'invert(1)';
+          continue;
+        }
+
+        // フルサイズ canvas に描画して反転（アンプレマルチ→反転→再マルチ）
+        const fW = fullBitmap.width, fH = fullBitmap.height;
+        const fullCanvas = document.createElement('canvas');
+        fullCanvas.width = fW; fullCanvas.height = fH;
+        const fctx = fullCanvas.getContext('2d');
+        fctx.imageSmoothingEnabled = true;
+        fctx.imageSmoothingQuality = 'high';
+        fctx.drawImage(fullBitmap, 0, 0, fW, fH);
+
+        let fullImgData;
+        try {
+          fullImgData = fctx.getImageData(0, 0, fW, fH);
+        } catch (e) {
+          console.warn('getImageData(full) failed (tainted?), falling back to CSS filter', e);
+          fullBitmap.close?.();
+          imgEl.style.filter = 'invert(1)';
+          continue;
+        }
+        const fdata = fullImgData.data;
+        // アンプレマルチ処理 + 反転 + 再マルチ
+        for (let i = 0; i < fdata.length; i += 4) {
+          const a = fdata[i+3] / 255;
+          if (a === 0) continue;
+          // アンプレマルチ (素材がプレマルチなら分離)
+          let r = fdata[i] / a;
+          let g = fdata[i+1] / a;
+          let b = fdata[i+2] / a;
+          // 反転（0..255範囲）
+          r = 255 - r;
+          g = 255 - g;
+          b = 255 - b;
+          // 再プレマルチ
+          fdata[i]   = Math.round(r * a);
+          fdata[i+1] = Math.round(g * a);
+          fdata[i+2] = Math.round(b * a);
+          // alpha はそのまま
+        }
+        fctx.putImageData(fullImgData, 0, 0);
+
+        // toBlob -> objectURL にして置換（メモリ効率良）
+        try {
+          const blobOut = await new Promise((resolve) => fullCanvas.toBlob(resolve, 'image/png'));
+          if (!blobOut) throw new Error('toBlob returned null');
+          const objUrl = URL.createObjectURL(blobOut);
+          // revoke old url if we created one before
+          const prev = objectUrlMap.get(imgEl);
+          if (prev && prev.url && prev.revokeOnNext && prev.url.startsWith('blob:')) {
+            URL.revokeObjectURL(prev.url);
+          }
+          // set new href (both href & xlink)
+          imgEl.setAttribute('href', objUrl);
+          imgEl.setAttributeNS('http://www.w3.org/1999/xlink', 'href', objUrl);
+          objectUrlMap.set(imgEl, { url: objUrl, revokeOnNext: true });
+        } catch (e) {
+          console.warn('toBlob/createObjectURL failed, fallback to dataURL', e);
+          try {
+            const dataUrl = fullCanvas.toDataURL('image/png');
+            imgEl.setAttribute('href', dataUrl);
+            imgEl.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUrl);
+            objectUrlMap.set(imgEl, { url: null, revokeOnNext: false });
+          } catch (e2) {
+            console.warn('fallback toDataURL failed', e2);
+            imgEl.style.filter = 'invert(1)';
+          }
+        } finally {
+          fullBitmap.close?.();
+        }
       } catch (err) {
-        console.warn('processSvgImages error', err);
+        console.warn('processSvgImagesHighQuality error', err);
         continue;
       }
-    }
-  }
+    } // images loop
+  } // processSvgImagesHighQuality
 
   // ----------------------------
-  // ページ描画ループ（元のロジックを復活）
+  // ページ描画ループ
   // ----------------------------
   for (let p = 1; p <= pdf.numPages; p++) {
     try {
       const page = await pdf.getPage(p);
-      const viewport = page.getViewport({ scale: 1.5 }); // 必要に応じて scale 調整
+      const viewport = page.getViewport({ scale: 1.5 });
       const opList = await page.getOperatorList();
 
       const svgGfx = new pdfjsLib.SVGGraphics(page.commonObjs, page.objs);
       const svg = await svgGfx.getSVG(opList, viewport);
 
-      // ページラッパー
       const pageDiv = document.createElement('div');
       pageDiv.className = 'page';
       pageDiv.style.width = viewport.width + 'px';
@@ -344,20 +414,19 @@ async function startViewer() {
       // テキスト/パスのスマート反転
       invertSvgColorsSmart(svg, { satThreshold: 0.15 });
 
-      // 画像は条件付きで反転（重いので await）
-      await processSvgImages(svg, { imageSatThreshold: 0.08, sampleStep: 6, maxSize: 800 });
+      // 画像を高品質で処理（重いので await）
+      await processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
     } catch (err) {
       console.error('Error rendering page', p, err);
-      // エラーが出ても次ページへ進む
       const errDiv = document.createElement('div');
       errDiv.textContent = `Error rendering page ${p}: ${err.message || err}`;
       container.appendChild(errDiv);
     }
   }
 
-  // 最後にスクロールトップ等の調整
+  // スクロールトップ
   window.scrollTo(0, 0);
 }
 
-// export グローバル（viewer-run.js から呼ぶ想定）
+// export
 window.startViewer = startViewer;
