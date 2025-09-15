@@ -1,4 +1,4 @@
-// viewer.js（テキストオーバーレイ組み込み済み完全版）
+// viewer.js
 // 前提: pdfjsLib が global に存在し、viewer-run.js が workerSrc を設定すること
 // window.startViewer を呼ぶことで動作します
 
@@ -28,7 +28,81 @@ async function startViewer() {
   container.innerHTML = '';
 
   // ----------------------------
-  // ヘルパー関数群（既存の色処理・画像処理等）
+  // Permission detection (コピー許可の判定)
+  // ----------------------------
+  async function detectCopyPermission(pdfDoc) {
+    try {
+      const perms = await pdfDoc.getPermissions();
+      // null => no explicit permissions => allow by default
+      if (perms === null) return { canCopy: true, rawPerms: perms };
+
+      // string-array case (e.g. ['print','extract'])
+      if (Array.isArray(perms) && perms.length > 0 && typeof perms[0] === 'string') {
+        const p = perms.map(s => String(s).toLowerCase());
+        const copyAllowed = p.includes('copy') || p.includes('extract') || p.includes('extracttext');
+        return { canCopy: !!copyAllowed, rawPerms: perms };
+      }
+
+      // numeric bitmask cases (PDF spec style) - conservative handling
+      const COPY_BIT_POS = 5;    // typical PDF spec position for copying/extraction
+      const EXTRACT_BIT_POS = 10; // extraction for accessibility
+      const copyMask = 1 << (COPY_BIT_POS - 1);
+      const extractMask = 1 << (EXTRACT_BIT_POS - 1);
+
+      if (Array.isArray(perms) && perms.length === 1 && typeof perms[0] === 'number') {
+        const P = perms[0];
+        const copyAllowed = !!(P & copyMask) || !!(P & extractMask);
+        return { canCopy: !!copyAllowed, rawPerms: perms };
+      }
+
+      if (Array.isArray(perms) && perms.every(x => typeof x === 'number')) {
+        const combined = perms.reduce((a, b) => a | b, 0);
+        const copyAllowed = !!(combined & copyMask) || !!(combined & extractMask);
+        return { canCopy: !!copyAllowed, rawPerms: perms };
+      }
+
+      // Unknown format: be conservative (disallow)
+      return { canCopy: false, rawPerms: perms };
+    } catch (e) {
+      console.warn('detectCopyPermission failed, assume copy allowed:', e);
+      // Choose policy: here we assume allowed for compatibility
+      return { canCopy: true, rawPerms: null };
+    }
+  }
+
+  // ----------------------------
+  // Copy blocking helpers (install/remove)
+  // ----------------------------
+  function installCopyBlockers(rootEl) {
+    // CSS selection block
+    rootEl.style.userSelect = 'none';
+    rootEl.style.webkitUserSelect = 'none';
+    rootEl.style.MozUserSelect = 'none';
+
+    function onCopy(e) {
+      e.preventDefault();
+      try { e.clipboardData.setData('text/plain', ''); } catch (err) {}
+      return false;
+    }
+    document.addEventListener('copy', onCopy);
+    document.addEventListener('cut', onCopy);
+
+    // Optional: suppress context menu
+    const onContext = (e) => e.preventDefault();
+    rootEl.addEventListener('contextmenu', onContext);
+
+    return () => {
+      document.removeEventListener('copy', onCopy);
+      document.removeEventListener('cut', onCopy);
+      rootEl.removeEventListener('contextmenu', onContext);
+      rootEl.style.userSelect = '';
+      rootEl.style.webkitUserSelect = '';
+      rootEl.style.MozUserSelect = '';
+    };
+  }
+
+  // ----------------------------
+  // Existing helper functions (color parsing, inversion, etc.)
   // ----------------------------
   function parseColor(str) {
     if (!str) return null;
@@ -202,7 +276,7 @@ async function startViewer() {
   }
 
   // ----------------------------
-  // 高品質画像反転フロー（省略しないでそのまま使える）
+  // High quality image processing (same as before)
   // ----------------------------
   const objectUrlMap = new Map();
 
@@ -258,14 +332,7 @@ async function startViewer() {
           continue;
         }
         const data = imgData.data;
-        let count = 0, sumSat = 0;
-        for (let y = 0; y < sH; y += sampleStep) {
-          for (let x = 0; x < sW; x += sampleStep) {
-            const i = (y * sH + x) * 4; // bugfix：誤った idx を防ぐ below using (y * sW + x)
-            // NOTE: fixed index below
-          }
-        }
-        // Recompute correctly (we re-run sampling loop properly)
+        // sampling loop
         let sumSat2 = 0, cnt2 = 0;
         for (let y = 0; y < sH; y += sampleStep) {
           for (let x = 0; x < sW; x += sampleStep) {
@@ -372,7 +439,7 @@ async function startViewer() {
   } // processSvgImagesHighQuality
 
   // ----------------------------
-  // テキスト overlay ヘルパー
+  // Text overlay helpers
   // ----------------------------
   function looksGoodTextContent(tc) {
     if (!tc || !tc.items || tc.items.length === 0) return false;
@@ -380,9 +447,8 @@ async function startViewer() {
     return /[0-9A-Za-z\u3000-\u30FF\u4E00-\u9FFF]/.test(sample);
   }
 
-  // matrix multiply helper (2x3 transforms in pdf.js style)
+  // fallback matrix multiply (for transforms)
   function multiplyTransform(a, b) {
-    // both are arrays length 6: [a, b, c, d, e, f] (SVG/PDF affine)
     return [
       a[0] * b[0] + a[1] * b[2],
       a[0] * b[1] + a[1] * b[3],
@@ -393,17 +459,7 @@ async function startViewer() {
     ];
   }
 
-  // transformPoint: apply transform to [x,y] using matrix [a,b,c,d,e,f]
-  function transformPoint(tx, x, y) {
-    return {
-      x: tx[0] * x + tx[2] * y + tx[4],
-      y: tx[1] * x + tx[3] * y + tx[5]
-    };
-  }
-
-  // create text overlay from textContent and viewport, append into pageDiv
   function renderTextLayerFromTextContent(textContent, viewport, pageDiv) {
-    // container for overlay
     const textLayer = document.createElement('div');
     textLayer.className = 'textLayer';
     textLayer.style.position = 'absolute';
@@ -417,10 +473,8 @@ async function startViewer() {
     pageDiv.style.position = 'relative';
     pageDiv.appendChild(textLayer);
 
-    // viewport.transform: use to map PDF text coords to page DOM coords
-    const vtm = viewport.transform; // [a,b,c,d,e,f]
+    const vtm = viewport.transform;
     textContent.items.forEach(item => {
-      // item.transform exists, combine transforms
       let itemTransform = item.transform || [1,0,0,1,0,0];
       let tx;
       try {
@@ -435,31 +489,43 @@ async function startViewer() {
 
       const left = tx[4];
       const top = tx[5];
-      // font-size approximation
       const fontHeight = Math.hypot(tx[1], tx[3]) || (item.height || 12);
 
       const span = document.createElement('span');
       span.textContent = item.str;
       span.style.position = 'absolute';
       span.style.left = `${left}px`;
-      // baseline adjustment: top - fontHeight is a reasonable start
       span.style.top = `${top - fontHeight}px`;
       span.style.fontSize = `${fontHeight}px`;
       span.style.whiteSpace = 'pre';
-      span.style.color = '#fff'; // 反転背景なら白文字で固定（必要なら可変に）
+      span.style.color = '#fff';
       span.style.lineHeight = '1';
       span.style.transformOrigin = '0 0';
-      span.style.pointerEvents = 'auto'; // これで選択が可能になる
-      // optional: set font-family fallback for readability (not required)
-      // span.style.fontFamily = 'sans-serif';
-
+      span.style.pointerEvents = 'auto'; // allow selection
       textLayer.appendChild(span);
     });
   }
 
   // ----------------------------
-  // ページ描画ループ（統合）
+  // Main: detect permission then render pages
   // ----------------------------
+  const permInfo = await detectCopyPermission(pdf);
+  const allowCopy = !!permInfo.canCopy;
+  console.log('PDF permission raw:', permInfo.rawPerms, 'allowCopy:', allowCopy);
+
+  // If copy is disallowed, install global blockers for extra safety
+  let removeCopyBlockers = null;
+  if (!allowCopy) {
+    removeCopyBlockers = installCopyBlockers(container);
+    // show small notice
+    const warn = document.createElement('div');
+    warn.textContent = 'このPDFはコピーが制限されています — コピーは無効化します。';
+    warn.style.color = '#ffcc00';
+    warn.style.padding = '6px';
+    warn.style.fontSize = '13px';
+    container.parentElement?.insertBefore(warn, container);
+  }
+
   for (let p = 1; p <= pdf.numPages; p++) {
     try {
       const page = await pdf.getPage(p);
@@ -476,33 +542,28 @@ async function startViewer() {
       pageDiv.appendChild(svg);
       container.appendChild(pageDiv);
 
-      // 1) 既存のスマート反転（テキスト要素やパス等）
+      // smart color inversion for SVG text/paths/etc.
       invertSvgColorsSmart(svg, { satThreshold: 0.15 });
 
-      // 2) テキストの正当性を確認して overlay を作る
-      let textContent;
+      // get textContent (may throw on some PDFs)
+      let textContent = null;
       try {
         textContent = await page.getTextContent();
       } catch (e) {
-        console.warn('getTextContent failed', e);
+        console.warn('getTextContent failed for page', p, e);
         textContent = null;
       }
 
-      if (looksGoodTextContent(textContent)) {
-        // hide original svg text to avoid duplicate visuals
-        svg.querySelectorAll('text').forEach(t => {
-          // 透明にして選択/表示の影響を抑える
-          t.setAttribute('fill', 'none');
-          // optionally: t.style.visibility = 'hidden';
-        });
-
-        // render overlay text using pdf.js textContent (これがコピー可能な正しい文字列)
+      // if allowed and textContent looks valid, render overlay for selectable text
+      if (allowCopy && looksGoodTextContent(textContent)) {
+        // hide svg text to avoid duplicate visuals
+        svg.querySelectorAll('text').forEach(t => t.setAttribute('fill', 'none'));
         renderTextLayerFromTextContent(textContent, viewport, pageDiv);
       } else {
-        // fallback: no overlay (keep SVG as-is, which is already color-adjusted)
+        // either copy disallowed or textContent invalid -> keep svg visuals only
       }
 
-      // 3) 画像は高品質処理（必要なら反転）
+      // images: process conditionally (may be heavy)
       await processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
 
     } catch (err) {
@@ -513,7 +574,20 @@ async function startViewer() {
     }
   }
 
-  // スクロールトップ
+  // cleanup note: you can call removeCopyBlockers() if you want to re-enable copy later
+  window.viewerCleanup = () => {
+    if (removeCopyBlockers) removeCopyBlockers();
+    // revoke any object URLs we created
+    for (const v of objectUrlMap.values()) {
+      if (v && v.url && v.url.startsWith('blob:')) URL.revokeObjectURL(v.url);
+    }
+    objectUrlMap.clear();
+  };
+
+  window.startViewer = startViewer; // no-op re-export safe
+  window.viewerPdf = pdf; // expose pdf for debugging if needed
+
+  // scroll to top
   window.scrollTo(0, 0);
 }
 
