@@ -1,34 +1,169 @@
-// viewer.js (テキストオーバーレイをスマートに切り替える版)
-// 前提: pdfjsLib が global に存在し、viewer-run.js が workerSrc を設定すること
-// window.startViewer を呼べば動く
+// viewer.js
+// - Chrome-like toolbar / layout
+// - SVG表示（pdf.js SVGGraphics）＋スマートテキストオーバーレイ
+// - 画像の高品質反転処理
+// - コピー権限チェック（コピー禁止なら overlay を作らない + コピーブロック）
+// - 表示モードトグル（SVG優先 / オーバーレイ優先）
+// - ズーム・Fit・ページ移動等の基本UIロジック
+//
+// 前提:
+// - pdfjsLib が global にあること
+// - startViewer() を呼べば動作します
 
 async function startViewer() {
   const params = new URLSearchParams(location.search);
   const file = params.get('file');
+  const origContainer = document.getElementById('container');
   if (!file) {
-    document.getElementById('container').textContent = 'No file specified.';
+    origContainer.textContent = 'No file specified.';
     return;
   }
 
-  // fetch PDF
+  // fetch PDF bytes
   let resp;
   try {
     resp = await fetch(file);
     if (!resp.ok) throw new Error('Failed to fetch PDF: ' + resp.status);
   } catch (e) {
-    document.getElementById('container').textContent = 'Fetch error: ' + e.message;
+    origContainer.textContent = 'Fetch error: ' + e.message;
     return;
   }
   const arrayBuffer = await resp.arrayBuffer();
 
-  // load doc
+  // load pdf
   const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
   const pdf = await loadingTask.promise;
-  const container = document.getElementById('container');
-  container.innerHTML = '';
+
+  // clear original container (we'll reparent into shell)
+  origContainer.innerHTML = '';
 
   // ----------------------------
-  // Permission detection (コピー許可の判定)
+  // create Chrome-like UI (toolbar + pagesHolder)
+  // ----------------------------
+  (function setupShell() {
+    const containerParent = origContainer.parentElement || document.body;
+
+    const shell = document.createElement('div');
+    shell.id = 'viewer-shell';
+    shell.style.height = '100vh';
+    shell.style.display = 'flex';
+    shell.style.flexDirection = 'column';
+
+    // toolbar placeholder (style mostly from existing CSS)
+    const toolbar = document.createElement('div');
+    toolbar.id = 'viewer-control-bar';
+    Object.assign(toolbar.style, {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      padding: '8px 12px',
+      background: 'linear-gradient(#1f1f1f, #161616)',
+      borderBottom: '1px solid rgba(255,255,255,0.04)',
+      boxShadow: '0 1px 0 rgba(255,255,255,0.02) inset',
+      color: '#e6e6e6',
+      fontFamily: 'inherit'
+    });
+
+    // left group: prev / page input / next
+    const leftGroup = document.createElement('div');
+    leftGroup.className = 'viewer-toolbar-group';
+    leftGroup.style.display = 'flex';
+    leftGroup.style.gap = '6px';
+    leftGroup.style.alignItems = 'center';
+
+    const btnPrev = document.createElement('button'); btnPrev.className = 'viewer-tool-btn'; btnPrev.textContent = '◀';
+    const pageInput = document.createElement('input'); pageInput.type = 'number'; pageInput.min = 1; pageInput.value = 1;
+    pageInput.style.width = '64px'; pageInput.className = 'viewer-tool-btn';
+    const btnNext = document.createElement('button'); btnNext.className = 'viewer-tool-btn'; btnNext.textContent = '▶';
+
+    leftGroup.appendChild(btnPrev);
+    leftGroup.appendChild(pageInput);
+    leftGroup.appendChild(btnNext);
+
+    // center group: zoom controls
+    const centerGroup = document.createElement('div');
+    centerGroup.className = 'viewer-toolbar-group';
+    centerGroup.style.display = 'flex';
+    centerGroup.style.gap = '6px';
+    centerGroup.style.alignItems = 'center';
+
+    const btnZoomOut = document.createElement('button'); btnZoomOut.className = 'viewer-tool-btn'; btnZoomOut.textContent = '-';
+    const zoomVal = document.createElement('input'); zoomVal.id = 'zoom-value'; zoomVal.value = '100%';
+    zoomVal.style.minWidth = '56px';
+    const btnZoomIn = document.createElement('button'); btnZoomIn.className = 'viewer-tool-btn'; btnZoomIn.textContent = '+';
+    const btnFitWidth = document.createElement('button'); btnFitWidth.className = 'viewer-tool-btn'; btnFitWidth.textContent = 'Fit Width';
+    const btnFitPage = document.createElement('button'); btnFitPage.className = 'viewer-tool-btn'; btnFitPage.textContent = 'Fit Page';
+
+    centerGroup.appendChild(btnZoomOut);
+    centerGroup.appendChild(zoomVal);
+    centerGroup.appendChild(btnZoomIn);
+    centerGroup.appendChild(btnFitWidth);
+    centerGroup.appendChild(btnFitPage);
+
+    // right group: actions (download/print) + mode toggle (SVG/Overlay)
+    const rightGroup = document.createElement('div');
+    rightGroup.className = 'viewer-toolbar-group';
+    rightGroup.style.marginLeft = 'auto';
+    rightGroup.style.display = 'flex';
+    rightGroup.style.gap = '6px';
+    rightGroup.style.alignItems = 'center';
+
+    const btnDownload = document.createElement('button'); btnDownload.className = 'viewer-tool-btn'; btnDownload.textContent = '↓ Download';
+    const btnPrint = document.createElement('button'); btnPrint.className = 'viewer-tool-btn'; btnPrint.textContent = 'Print';
+
+    // mode toggle (SVG優先 / オーバーレイ優先)
+    const btnSvgMode = document.createElement('button'); btnSvgMode.className = 'viewer-tool-btn'; btnSvgMode.textContent = 'SVG優先';
+    const btnOverlayMode = document.createElement('button'); btnOverlayMode.className = 'viewer-tool-btn'; btnOverlayMode.textContent = 'オーバーレイ優先';
+
+    rightGroup.appendChild(btnDownload);
+    rightGroup.appendChild(btnPrint);
+    rightGroup.appendChild(btnSvgMode);
+    rightGroup.appendChild(btnOverlayMode);
+
+    toolbar.appendChild(leftGroup);
+    toolbar.appendChild(centerGroup);
+    toolbar.appendChild(rightGroup);
+
+    // wrapper + pagesHolder
+    const wrapper = document.createElement('div');
+    wrapper.id = 'viewer-container-wrapper';
+    Object.assign(wrapper.style, {
+      flex: '1 1 auto',
+      overflow: 'auto',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'flex-start',
+      padding: '20px',
+      background: '#2b2b2b'
+    });
+
+    const pagesHolder = document.createElement('div');
+    pagesHolder.id = 'viewer-pages';
+    pagesHolder.style.display = 'flex';
+    pagesHolder.style.flexDirection = 'column';
+    pagesHolder.style.gap = '20px';
+    pagesHolder.style.alignItems = 'center';
+
+    wrapper.appendChild(pagesHolder);
+    shell.appendChild(toolbar);
+    shell.appendChild(wrapper);
+
+    // replace original container with shell, and keep origContainer for later debug/UI
+    containerParent.replaceChild(shell, origContainer);
+
+    // expose UI
+    window.__viewer_ui = {
+      shell, toolbar, wrapper, pagesHolder,
+      btnPrev, btnNext, pageInput, btnZoomIn, btnZoomOut, zoomVal, btnFitWidth, btnFitPage, btnDownload, btnPrint,
+      btnSvgMode, btnOverlayMode
+    };
+  })();
+
+  // now alias containerRef to pagesHolder for appending pages
+  const container = window.__viewer_ui.pagesHolder;
+
+  // ----------------------------
+  // permission detection (copy)
   // ----------------------------
   async function detectCopyPermission(pdfDoc) {
     try {
@@ -61,24 +196,17 @@ async function startViewer() {
   }
 
   // ----------------------------
-  // Copy blocking helpers
+  // copy-block helpers
   // ----------------------------
   function installCopyBlockers(rootEl) {
     rootEl.style.userSelect = 'none';
     rootEl.style.webkitUserSelect = 'none';
     rootEl.style.MozUserSelect = 'none';
-
-    function onCopy(e) {
-      e.preventDefault();
-      try { e.clipboardData.setData('text/plain', ''); } catch (err) {}
-      return false;
-    }
+    function onCopy(e) { e.preventDefault(); try { e.clipboardData.setData('text/plain', ''); } catch (_) {} return false; }
     document.addEventListener('copy', onCopy);
     document.addEventListener('cut', onCopy);
-
     const onContext = (e) => e.preventDefault();
     rootEl.addEventListener('contextmenu', onContext);
-
     return () => {
       document.removeEventListener('copy', onCopy);
       document.removeEventListener('cut', onCopy);
@@ -90,7 +218,7 @@ async function startViewer() {
   }
 
   // ----------------------------
-  // 色処理などヘルパー
+  // color / saturation / inversion helpers
   // ----------------------------
   function parseColor(str) {
     if (!str) return null;
@@ -106,9 +234,7 @@ async function startViewer() {
     const rgbMatch = str.match(/^rgba?\(([^)]+)\)$/);
     if (rgbMatch) {
       const parts = rgbMatch[1].split(',').map(s => s.trim());
-      const r = parseFloat(parts[0]);
-      const g = parseFloat(parts[1]);
-      const b = parseFloat(parts[2]);
+      const r = parseFloat(parts[0]), g = parseFloat(parts[1]), b = parseFloat(parts[2]);
       const a = parts[3] !== undefined ? parseFloat(parts[3]) : 1;
       return { r, g, b, a };
     }
@@ -122,9 +248,7 @@ async function startViewer() {
     return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
   }
   function relativeLuminance(rgb) {
-    const R = srgbToLinearChannel(rgb.r);
-    const G = srgbToLinearChannel(rgb.g);
-    const B = srgbToLinearChannel(rgb.b);
+    const R = srgbToLinearChannel(rgb.r), G = srgbToLinearChannel(rgb.g), B = srgbToLinearChannel(rgb.b);
     return 0.2126 * R + 0.7152 * G + 0.0722 * B;
   }
   function pickForegroundForBackground(bgRgb) {
@@ -207,11 +331,8 @@ async function startViewer() {
       } else {
         const urlRef = fillAttr.trim();
         const gradColored = gradientMap.has(urlRef) ? gradientMap.get(urlRef) : true;
-        if (gradColored) {
-          fillColor = { keep: true };
-        } else {
-          fillColor = null;
-        }
+        if (gradColored) fillColor = { keep: true };
+        else fillColor = null;
       }
 
       let strokeAttr = el.getAttribute('stroke');
@@ -227,7 +348,7 @@ async function startViewer() {
       }
 
       if (fillColor && fillColor.keep) {
-        // nothing
+        // keep colored gradient
       } else {
         if (fillColor) {
           if (!isColored(fillColor, options)) {
@@ -264,10 +385,9 @@ async function startViewer() {
   }
 
   // ----------------------------
-  // 高品質画像反転フロー（前と同じ）
+  // image processing (high quality invert)
   // ----------------------------
   const objectUrlMap = new Map();
-
   async function processSvgImagesHighQuality(svgRoot, options = {}) {
     const imageSatThreshold = options.imageSatThreshold ?? 0.08;
     const sampleMax = options.sampleMax ?? 200;
@@ -426,7 +546,7 @@ async function startViewer() {
   }
 
   // ----------------------------
-  // Text overlay helpers（改良版）
+  // text overlay helpers (improved)
   // ----------------------------
   function looksGoodTextContent(tc) {
     if (!tc || !tc.items || tc.items.length === 0) return false;
@@ -445,21 +565,26 @@ async function startViewer() {
     ];
   }
 
-  // 改良: SVG にテキストがあれば overlay を透明に（選択は可能）、無ければ可視化して置き換える
   function renderTextLayerFromTextContent(textContent, viewport, pageDiv, options = {}) {
-    options = Object.assign({ forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#fff' }, options);
+    options = Object.assign({ forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#fff', zIndex: 3000 }, options);
+
+    if (getComputedStyle(pageDiv).position === 'static') pageDiv.style.position = 'relative';
 
     const textLayer = document.createElement('div');
     textLayer.className = 'textLayer';
-    textLayer.style.position = 'absolute';
-    textLayer.style.left = '0';
-    textLayer.style.top = '0';
-    textLayer.style.width = pageDiv.style.width;
-    textLayer.style.height = pageDiv.style.height;
-    textLayer.style.pointerEvents = 'none';
-    textLayer.style.overflow = 'visible';
-    textLayer.style.zIndex = '2';
-    pageDiv.style.position = 'relative';
+    Object.assign(textLayer.style, {
+      position: 'absolute',
+      left: '0',
+      top: '0',
+      width: pageDiv.style.width,
+      height: pageDiv.style.height,
+      pointerEvents: 'auto',
+      overflow: 'visible',
+      zIndex: String(options.zIndex),
+      background: 'transparent',
+      mixBlendMode: 'normal'
+    });
+
     pageDiv.appendChild(textLayer);
 
     const vtm = viewport.transform;
@@ -482,18 +607,24 @@ async function startViewer() {
 
       const span = document.createElement('span');
       span.textContent = item.str;
-      span.style.position = 'absolute';
-      span.style.left = `${left}px`;
-      span.style.top = `${top - fontHeight}px`;
-      span.style.fontSize = `${fontHeight}px`;
-      span.style.whiteSpace = 'pre';
-      span.style.lineHeight = '1';
-      span.style.transformOrigin = '0 0';
-      span.style.pointerEvents = 'auto'; // allow selection
+      Object.assign(span.style, {
+        position: 'absolute',
+        left: `${left}px`,
+        top: `${top - fontHeight}px`,
+        fontSize: `${fontHeight}px`,
+        whiteSpace: 'pre',
+        lineHeight: '1',
+        transformOrigin: '0 0',
+        pointerEvents: 'auto',
+        userSelect: 'text',
+        WebkitUserSelect: 'text',
+        MozUserSelect: 'text',
+        color: options.color,
+        WebkitTextFillColor: options.color
+      });
       textLayer.appendChild(span);
     });
 
-    // decide visual vs transparent
     const svgElem = pageDiv.querySelector('svg');
     const hasSvgText = !!svgElem && !!svgElem.querySelector('text, tspan');
     const shouldBeVisible = options.forceVisible || (!hasSvgText) || !options.makeTransparentIfSvgTextExists;
@@ -501,19 +632,186 @@ async function startViewer() {
     textLayer.querySelectorAll('span').forEach(s => {
       if (shouldBeVisible) {
         s.style.color = options.color;
+        s.style.WebkitTextFillColor = options.color;
       } else {
         s.style.color = 'transparent';
-        s.style.webkitTextFillColor = 'transparent';
-        // ensure selection works: allow pointer events on layer
-        textLayer.style.pointerEvents = 'auto';
+        s.style.WebkitTextFillColor = 'transparent';
+        s.style.pointerEvents = 'auto';
       }
     });
+
+    if (svgElem) {
+      const svgStyle = svgElem.style;
+      if (!svgStyle.position || svgStyle.position === 'static') svgStyle.position = 'absolute';
+      try {
+        svgStyle.zIndex = String((parseInt(svgStyle.zIndex) || 0) - 1);
+      } catch (e) {
+        svgStyle.zIndex = '1';
+      }
+    }
 
     return textLayer;
   }
 
   // ----------------------------
-  // Main: detect permission then render pages
+  // toolbar wiring: zoom/navigation/download/print/mode
+  // ----------------------------
+  (function wireToolbarLogic() {
+    const ui = window.__viewer_ui;
+    if (!ui) return;
+
+    let currentScale = 1.0;
+
+    function applyScaleToAllPages(scale) {
+      const pages = ui.pagesHolder.querySelectorAll('.page');
+      pages.forEach(pageDiv => {
+        // set transform and also adjust the layout size so container scroll works properly
+        pageDiv.style.transform = `scale(${scale})`;
+        const baseW = parseFloat(pageDiv.getAttribute('data-base-width') || pageDiv.style.width || pageDiv.clientWidth);
+        const baseH = parseFloat(pageDiv.getAttribute('data-base-height') || pageDiv.style.height || pageDiv.clientHeight);
+        // width/height of outer (so scroll area accounts for scaled size)
+        pageDiv.style.width = (baseW * scale) + 'px';
+        pageDiv.style.height = (baseH * scale) + 'px';
+        // additionally ensure the inner paper keeps correct size (optional)
+        const paper = pageDiv.querySelector('.paper');
+        if (paper) {
+          paper.style.width = '100%';
+          paper.style.height = '100%';
+        }
+      });
+      currentScale = scale;
+      ui.zoomVal.value = Math.round(scale * 100) + '%';
+    }
+
+
+    function fitWidth() {
+      const viewportWidth = ui.wrapper.clientWidth - 40;
+      const first = ui.pagesHolder.querySelector('.page');
+      if (!first) return;
+      const baseW = parseFloat(first.getAttribute('data-base-width') || first.style.width || first.clientWidth);
+      const targetScale = Math.max(0.1, viewportWidth / baseW);
+      applyScaleToAllPages(targetScale);
+    }
+    function fitPage() {
+      const viewportHeight = ui.wrapper.clientHeight - ui.toolbar.clientHeight - 40;
+      const first = ui.pagesHolder.querySelector('.page');
+      if (!first) return;
+      const baseH = parseFloat(first.getAttribute('data-base-height') || first.style.height || first.clientHeight);
+      const targetScale = Math.max(0.1, viewportHeight / baseH);
+      applyScaleToAllPages(targetScale);
+    }
+
+    function goToPage(n) {
+      const pages = Array.from(ui.pagesHolder.querySelectorAll('.page'));
+      if (!pages.length) return;
+      const idx = Math.min(Math.max(1, n), pages.length);
+      const target = pages[idx - 1];
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      ui.pageInput.value = idx;
+    }
+
+    ui.btnZoomIn.addEventListener('click', () => { applyScaleToAllPages(Math.min(5, currentScale + 0.1)); });
+    ui.btnZoomOut.addEventListener('click', () => { applyScaleToAllPages(Math.max(0.1, currentScale - 0.1)); });
+    ui.btnFitWidth.addEventListener('click', fitWidth);
+    ui.btnFitPage.addEventListener('click', fitPage);
+
+    ui.btnNext.addEventListener('click', () => { goToPage(parseInt(ui.pageInput.value||'1',10) + 1); });
+    ui.btnPrev.addEventListener('click', () => { goToPage(parseInt(ui.pageInput.value||'1',10) - 1); });
+    ui.pageInput.addEventListener('change', () => { goToPage(parseInt(ui.pageInput.value||'1',10)); });
+
+    ui.btnDownload.addEventListener('click', async () => {
+      const a = document.createElement('a');
+      a.href = file;
+      a.download = file.split('/').pop() || 'document.pdf';
+      a.click();
+    });
+    ui.btnPrint.addEventListener('click', () => window.print());
+
+    ui.zoomVal.addEventListener('change', () => {
+      const raw = ui.zoomVal.value.trim().replace('%','');
+      const n = parseFloat(raw);
+      if (!isFinite(n) || n <= 0) {
+        ui.zoomVal.value = Math.round(currentScale * 100) + '%';
+        return;
+      }
+      applyScaleToAllPages(Math.max(0.1, n / 100));
+    });
+
+    // mode toggle
+    const STORAGE_KEY = 'viewerTextMode';
+    function saveMode(m) { try { localStorage.setItem(STORAGE_KEY, m); } catch(_) {} }
+    function loadMode() { try { return localStorage.getItem(STORAGE_KEY) || 'svg'; } catch(_) { return 'svg'; } }
+
+    function applyModeToAllPages(mode) {
+      const pages = ui.pagesHolder.querySelectorAll('.page');
+      pages.forEach(pageDiv => {
+        const svgElem = pageDiv.querySelector('svg');
+        const textLayer = pageDiv.querySelector('.textLayer');
+
+        if (mode === 'svg') {
+          if (svgElem) {
+            svgElem.querySelectorAll('text, tspan').forEach(t => {
+              t.style.visibility = '';
+              if (t.hasAttribute('data-original-fill')) {
+                t.setAttribute('fill', t.getAttribute('data-original-fill'));
+              }
+            });
+          }
+          if (textLayer) {
+            textLayer.querySelectorAll('span').forEach(s => {
+              s.style.color = 'transparent';
+              s.style.WebkitTextFillColor = 'transparent';
+            });
+            textLayer.style.pointerEvents = 'auto';
+          }
+        } else {
+          if (svgElem) {
+            svgElem.querySelectorAll('text, tspan').forEach(t => {
+              if (!t.hasAttribute('data-original-fill')) {
+                const f = t.getAttribute('fill');
+                if (f) t.setAttribute('data-original-fill', f);
+              }
+              t.style.visibility = 'hidden';
+            });
+          }
+          if (textLayer) {
+            textLayer.querySelectorAll('span').forEach(s => {
+              s.style.color = '#fff';
+              s.style.WebkitTextFillColor = '#fff';
+            });
+            textLayer.style.zIndex = '3000';
+            textLayer.style.pointerEvents = 'auto';
+          }
+        }
+      });
+    }
+
+    // initialize mode buttons
+    function updateButtons(mode) {
+      if (mode === 'overlay') {
+        ui.btnOverlayMode.style.background = '#0a84ff';
+        ui.btnSvgMode.style.background = '#222';
+      } else {
+        ui.btnSvgMode.style.background = '#0a84ff';
+        ui.btnOverlayMode.style.background = '#222';
+      }
+    }
+    const initialMode = loadMode();
+    updateButtons(initialMode);
+    applyModeToAllPages(initialMode);
+
+    ui.btnSvgMode.addEventListener('click', () => { saveMode('svg'); updateButtons('svg'); applyModeToAllPages('svg'); });
+    ui.btnOverlayMode.addEventListener('click', () => { saveMode('overlay'); updateButtons('overlay'); applyModeToAllPages('overlay'); });
+
+    // expose some utilities
+    window.__viewer_applyScaleToAllPages = applyScaleToAllPages;
+    window.__viewer_goToPage = goToPage;
+    window.__viewer_applyMode = applyModeToAllPages;
+
+  })();
+
+  // ----------------------------
+  // main render loop
   // ----------------------------
   const permInfo = await detectCopyPermission(pdf);
   const allowCopy = !!permInfo.canCopy;
@@ -527,8 +825,11 @@ async function startViewer() {
     warn.style.color = '#ffcc00';
     warn.style.padding = '6px';
     warn.style.fontSize = '13px';
-    container.parentElement?.insertBefore(warn, container);
+    origContainer.parentElement?.insertBefore(warn, origContainer);
   }
+
+  // current UI mode
+  const curMode = (function(){ try { return localStorage.getItem('viewerTextMode') || 'svg'; } catch(_) { return 'svg'; } })();
 
   for (let p = 1; p <= pdf.numPages; p++) {
     try {
@@ -539,17 +840,42 @@ async function startViewer() {
       const svgGfx = new pdfjsLib.SVGGraphics(page.commonObjs, page.objs);
       const svg = await svgGfx.getSVG(opList, viewport);
 
+      // create page outer + inner paper wrapper
       const pageDiv = document.createElement('div');
       pageDiv.className = 'page';
+      pageDiv.setAttribute('data-base-width', viewport.width);
+      pageDiv.setAttribute('data-base-height', viewport.height);
+
+      // outer page: width/height represent the paper size INCLUDING padding area
       pageDiv.style.width = viewport.width + 'px';
       pageDiv.style.height = viewport.height + 'px';
-      pageDiv.appendChild(svg);
+      pageDiv.style.transformOrigin = '0 0';
+      pageDiv.style.overflow = 'visible';
+
+      // inner paper element that holds SVG (paper is the visible white sheet)
+      const paper = document.createElement('div');
+      paper.className = 'paper';
+      paper.style.width = '100%';
+      paper.style.height = '100%';
+      paper.appendChild(svg);
+
+      // append
+      pageDiv.appendChild(paper);
       container.appendChild(pageDiv);
 
-      // smart color inversion for SVG visuals
+      // footer (if you still want it)
+      const footer = document.createElement('div');
+      footer.className = 'page-footer';
+      footer.textContent = `Page ${p} / ${pdf.numPages}`;
+      pageDiv.appendChild(footer);
+
+
+      container.appendChild(pageDiv);
+
+      // color inversion for SVG elements
       invertSvgColorsSmart(svg, { satThreshold: 0.15 });
 
-      // get textContent
+      // try to get textContent
       let textContent = null;
       try {
         textContent = await page.getTextContent();
@@ -558,14 +884,25 @@ async function startViewer() {
         textContent = null;
       }
 
-      // if allowed and looks good, render overlay but DO NOT blindly hide SVG text
       if (allowCopy && looksGoodTextContent(textContent)) {
-        renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#fff' });
-      } else {
-        // copy disallowed or invalid textContent -> keep SVG visuals only
+        const wantForceVisible = (curMode === 'overlay');
+        renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: '#fff' });
+
+        if (wantForceVisible) {
+          const svgElem = pageDiv.querySelector('svg');
+          if (svgElem) {
+            svgElem.querySelectorAll('text, tspan').forEach(t => {
+              if (!t.hasAttribute('data-original-fill')) {
+                const f = t.getAttribute('fill');
+                if (f) t.setAttribute('data-original-fill', f);
+              }
+              t.style.visibility = 'hidden';
+            });
+          }
+        }
       }
 
-      // images
+      // process images (may be slow on many images)
       await processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
 
     } catch (err) {
@@ -576,7 +913,10 @@ async function startViewer() {
     }
   }
 
-  // cleanup helpers exposed
+  // initial layout/scale: fit width by default
+  try { window.__viewer_applyScaleToAllPages(1.0); window.__viewer_applyMode(curMode); } catch (e) {}
+
+  // cleanup helper
   window.viewerCleanup = () => {
     if (removeCopyBlockers) removeCopyBlockers();
     for (const v of objectUrlMap.values()) {
@@ -586,7 +926,9 @@ async function startViewer() {
   };
 
   window.viewerPdf = pdf;
-  // scroll top
+  window.startViewer = startViewer; // idempotent export
+
+  // scroll to top
   window.scrollTo(0, 0);
 }
 

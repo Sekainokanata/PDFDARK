@@ -4,6 +4,110 @@
   <meta charset="utf-8" />
   <title>Invert PDF Viewer</title>
   <link rel="stylesheet" href="viewer.css">
+  <style>
+  /* Chrome-like viewer styles */
+  #viewer-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: #2b2b2b; /* browser chrome dark bg */
+    color: #e6e6e6;
+    font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #viewer-control-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: linear-gradient(#1f1f1f, #161616);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset;
+  }
+
+  .viewer-toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .viewer-tool-btn {
+    background: transparent;
+    color: #e6e6e6;
+    border: 1px solid rgba(255,255,255,0.06);
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .viewer-tool-btn:hover { background: rgba(255,255,255,0.02); }
+
+  #viewer-container-wrapper {
+    flex: 1 1 auto;
+    overflow: auto;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 20px;
+  }
+
+  /* the page stack area */
+  #viewer-pages {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    align-items: center;
+  }
+
+  /* each page 'paper' */
+  /* ページ周り（外枠） */
+  .page {
+    background: transparent;        /* 外側は透明に */
+    border-radius: 8px;
+    padding: 12px;                  /* ページと周囲の余白（紙を内包） */
+    display: inline-block;
+    transform-origin: 0 0;          /* scale の原点を左上に */
+    overflow: visible;              /* scale 時に切られないように */
+    box-sizing: content-box;
+    margin: 12px 0;
+  }
+
+  /* 実際の「紙」 */
+  .page .paper {
+    background: #ffffff;            /* 紙は白 */
+    border-radius: 4px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+    padding: 0;                     /* svg をそのまま入れるなら padding は 0 が安定 */
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  /* wrapper（背景）をダークにして紙を際立たせる */
+  #viewer-container-wrapper {
+    background: #2b2b2b; /* ダークなブラウザ背景 */
+  }
+
+
+  /* textLayer overlay styling */
+  .textLayer span {
+    font-family: inherit;
+    white-space: pre;
+  }
+
+  /* zoom input small style */
+  #zoom-value {
+    min-width: 56px;
+    text-align: center;
+    background: transparent;
+    color: #e6e6e6;
+    border: 1px solid rgba(255,255,255,0.06);
+    padding: 6px;
+    border-radius: 6px;
+  }
+  </style>
 </head>
 <body>
   
