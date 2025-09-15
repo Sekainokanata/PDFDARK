@@ -1,6 +1,6 @@
-// viewer.js
+// viewer.js (テキストオーバーレイをスマートに切り替える版)
 // 前提: pdfjsLib が global に存在し、viewer-run.js が workerSrc を設定すること
-// window.startViewer を呼ぶことで動作します
+// window.startViewer を呼べば動く
 
 async function startViewer() {
   const params = new URLSearchParams(location.search);
@@ -33,48 +33,37 @@ async function startViewer() {
   async function detectCopyPermission(pdfDoc) {
     try {
       const perms = await pdfDoc.getPermissions();
-      // null => no explicit permissions => allow by default
       if (perms === null) return { canCopy: true, rawPerms: perms };
-
-      // string-array case (e.g. ['print','extract'])
       if (Array.isArray(perms) && perms.length > 0 && typeof perms[0] === 'string') {
         const p = perms.map(s => String(s).toLowerCase());
         const copyAllowed = p.includes('copy') || p.includes('extract') || p.includes('extracttext');
         return { canCopy: !!copyAllowed, rawPerms: perms };
       }
-
-      // numeric bitmask cases (PDF spec style) - conservative handling
-      const COPY_BIT_POS = 5;    // typical PDF spec position for copying/extraction
-      const EXTRACT_BIT_POS = 10; // extraction for accessibility
+      const COPY_BIT_POS = 5;
+      const EXTRACT_BIT_POS = 10;
       const copyMask = 1 << (COPY_BIT_POS - 1);
       const extractMask = 1 << (EXTRACT_BIT_POS - 1);
-
       if (Array.isArray(perms) && perms.length === 1 && typeof perms[0] === 'number') {
         const P = perms[0];
         const copyAllowed = !!(P & copyMask) || !!(P & extractMask);
         return { canCopy: !!copyAllowed, rawPerms: perms };
       }
-
       if (Array.isArray(perms) && perms.every(x => typeof x === 'number')) {
         const combined = perms.reduce((a, b) => a | b, 0);
         const copyAllowed = !!(combined & copyMask) || !!(combined & extractMask);
         return { canCopy: !!copyAllowed, rawPerms: perms };
       }
-
-      // Unknown format: be conservative (disallow)
       return { canCopy: false, rawPerms: perms };
     } catch (e) {
       console.warn('detectCopyPermission failed, assume copy allowed:', e);
-      // Choose policy: here we assume allowed for compatibility
       return { canCopy: true, rawPerms: null };
     }
   }
 
   // ----------------------------
-  // Copy blocking helpers (install/remove)
+  // Copy blocking helpers
   // ----------------------------
   function installCopyBlockers(rootEl) {
-    // CSS selection block
     rootEl.style.userSelect = 'none';
     rootEl.style.webkitUserSelect = 'none';
     rootEl.style.MozUserSelect = 'none';
@@ -87,7 +76,6 @@ async function startViewer() {
     document.addEventListener('copy', onCopy);
     document.addEventListener('cut', onCopy);
 
-    // Optional: suppress context menu
     const onContext = (e) => e.preventDefault();
     rootEl.addEventListener('contextmenu', onContext);
 
@@ -102,7 +90,7 @@ async function startViewer() {
   }
 
   // ----------------------------
-  // Existing helper functions (color parsing, inversion, etc.)
+  // 色処理などヘルパー
   // ----------------------------
   function parseColor(str) {
     if (!str) return null;
@@ -276,7 +264,7 @@ async function startViewer() {
   }
 
   // ----------------------------
-  // High quality image processing (same as before)
+  // 高品質画像反転フロー（前と同じ）
   // ----------------------------
   const objectUrlMap = new Map();
 
@@ -332,7 +320,6 @@ async function startViewer() {
           continue;
         }
         const data = imgData.data;
-        // sampling loop
         let sumSat2 = 0, cnt2 = 0;
         for (let y = 0; y < sH; y += sampleStep) {
           for (let x = 0; x < sW; x += sampleStep) {
@@ -435,11 +422,11 @@ async function startViewer() {
         console.warn('processSvgImagesHighQuality error', err);
         continue;
       }
-    } // images loop
-  } // processSvgImagesHighQuality
+    }
+  }
 
   // ----------------------------
-  // Text overlay helpers
+  // Text overlay helpers（改良版）
   // ----------------------------
   function looksGoodTextContent(tc) {
     if (!tc || !tc.items || tc.items.length === 0) return false;
@@ -447,7 +434,6 @@ async function startViewer() {
     return /[0-9A-Za-z\u3000-\u30FF\u4E00-\u9FFF]/.test(sample);
   }
 
-  // fallback matrix multiply (for transforms)
   function multiplyTransform(a, b) {
     return [
       a[0] * b[0] + a[1] * b[2],
@@ -459,7 +445,10 @@ async function startViewer() {
     ];
   }
 
-  function renderTextLayerFromTextContent(textContent, viewport, pageDiv) {
+  // 改良: SVG にテキストがあれば overlay を透明に（選択は可能）、無ければ可視化して置き換える
+  function renderTextLayerFromTextContent(textContent, viewport, pageDiv, options = {}) {
+    options = Object.assign({ forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#fff' }, options);
+
     const textLayer = document.createElement('div');
     textLayer.className = 'textLayer';
     textLayer.style.position = 'absolute';
@@ -498,12 +487,29 @@ async function startViewer() {
       span.style.top = `${top - fontHeight}px`;
       span.style.fontSize = `${fontHeight}px`;
       span.style.whiteSpace = 'pre';
-      span.style.color = '#fff';
       span.style.lineHeight = '1';
       span.style.transformOrigin = '0 0';
       span.style.pointerEvents = 'auto'; // allow selection
       textLayer.appendChild(span);
     });
+
+    // decide visual vs transparent
+    const svgElem = pageDiv.querySelector('svg');
+    const hasSvgText = !!svgElem && !!svgElem.querySelector('text, tspan');
+    const shouldBeVisible = options.forceVisible || (!hasSvgText) || !options.makeTransparentIfSvgTextExists;
+
+    textLayer.querySelectorAll('span').forEach(s => {
+      if (shouldBeVisible) {
+        s.style.color = options.color;
+      } else {
+        s.style.color = 'transparent';
+        s.style.webkitTextFillColor = 'transparent';
+        // ensure selection works: allow pointer events on layer
+        textLayer.style.pointerEvents = 'auto';
+      }
+    });
+
+    return textLayer;
   }
 
   // ----------------------------
@@ -513,11 +519,9 @@ async function startViewer() {
   const allowCopy = !!permInfo.canCopy;
   console.log('PDF permission raw:', permInfo.rawPerms, 'allowCopy:', allowCopy);
 
-  // If copy is disallowed, install global blockers for extra safety
   let removeCopyBlockers = null;
   if (!allowCopy) {
     removeCopyBlockers = installCopyBlockers(container);
-    // show small notice
     const warn = document.createElement('div');
     warn.textContent = 'このPDFはコピーが制限されています — コピーは無効化します。';
     warn.style.color = '#ffcc00';
@@ -542,10 +546,10 @@ async function startViewer() {
       pageDiv.appendChild(svg);
       container.appendChild(pageDiv);
 
-      // smart color inversion for SVG text/paths/etc.
+      // smart color inversion for SVG visuals
       invertSvgColorsSmart(svg, { satThreshold: 0.15 });
 
-      // get textContent (may throw on some PDFs)
+      // get textContent
       let textContent = null;
       try {
         textContent = await page.getTextContent();
@@ -554,16 +558,14 @@ async function startViewer() {
         textContent = null;
       }
 
-      // if allowed and textContent looks valid, render overlay for selectable text
+      // if allowed and looks good, render overlay but DO NOT blindly hide SVG text
       if (allowCopy && looksGoodTextContent(textContent)) {
-        // hide svg text to avoid duplicate visuals
-        svg.querySelectorAll('text').forEach(t => t.setAttribute('fill', 'none'));
-        renderTextLayerFromTextContent(textContent, viewport, pageDiv);
+        renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#fff' });
       } else {
-        // either copy disallowed or textContent invalid -> keep svg visuals only
+        // copy disallowed or invalid textContent -> keep SVG visuals only
       }
 
-      // images: process conditionally (may be heavy)
+      // images
       await processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
 
     } catch (err) {
@@ -574,20 +576,17 @@ async function startViewer() {
     }
   }
 
-  // cleanup note: you can call removeCopyBlockers() if you want to re-enable copy later
+  // cleanup helpers exposed
   window.viewerCleanup = () => {
     if (removeCopyBlockers) removeCopyBlockers();
-    // revoke any object URLs we created
     for (const v of objectUrlMap.values()) {
       if (v && v.url && v.url.startsWith('blob:')) URL.revokeObjectURL(v.url);
     }
     objectUrlMap.clear();
   };
 
-  window.startViewer = startViewer; // no-op re-export safe
-  window.viewerPdf = pdf; // expose pdf for debugging if needed
-
-  // scroll to top
+  window.viewerPdf = pdf;
+  // scroll top
   window.scrollTo(0, 0);
 }
 
