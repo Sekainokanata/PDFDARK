@@ -1,6 +1,5 @@
-// viewer.js（テキストオーバーレイ組み込み済み完全版）
-// 前提: pdfjsLib が global に存在し、viewer-run.js が workerSrc を設定すること
-// window.startViewer を呼ぶことで動作します
+// viewer.js (高品質画像反転フロー組み込み済み)
+// 前提: pdfjsLib が global に存在すること、viewer-run.js で workerSrc を設定しておくこと
 
 async function startViewer() {
   const params = new URLSearchParams(location.search);
@@ -28,7 +27,7 @@ async function startViewer() {
   container.innerHTML = '';
 
   // ----------------------------
-  // ヘルパー関数群（既存の色処理・画像処理等）
+  // ヘルパー関数群（parse / 色判定 / SVG反転）
   // ----------------------------
   function parseColor(str) {
     if (!str) return null;
@@ -202,22 +201,27 @@ async function startViewer() {
   }
 
   // ----------------------------
-  // 高品質画像反転フロー（省略しないでそのまま使える）
+  // 高品質画像反転フロー
+  // - 判定は縮小サンプルで軽く
+  // - 反転は可能なら元解像度で（アンプレマルチ→反転→再マルチ）
+  // - 出力は toBlob + createObjectURL（メモリ効率よし）
   // ----------------------------
-  const objectUrlMap = new Map();
+  const objectUrlMap = new Map(); // imgEl -> { url, revokeOnNext }
 
   async function processSvgImagesHighQuality(svgRoot, options = {}) {
     const imageSatThreshold = options.imageSatThreshold ?? 0.08;
-    const sampleMax = options.sampleMax ?? 200;
+    const sampleMax = options.sampleMax ?? 200; // サンプル用最大幅（小さめでサンプリング）
     const sampleStep = options.sampleStep ?? 6;
-    const maxFullSizeForInvert = options.maxFullSizeForInvert ?? 2500;
+    const maxFullSizeForInvert = options.maxFullSizeForInvert ?? 2500; // フル処理する最大辺（調整推奨）
 
     const images = Array.from(svgRoot.querySelectorAll('image'));
     for (const imgEl of images) {
       try {
+        // href 取得（xlink 対応）
         let href = imgEl.getAttribute('href') || imgEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || imgEl.getAttribute('xlink:href');
         if (!href) continue;
 
+        // fetch blob (data: も fetch で OK)
         let blob;
         try {
           const respImg = await fetch(href);
@@ -228,12 +232,16 @@ async function startViewer() {
           continue;
         }
 
+        // createImageBitmap（縮小オプションを使って高品質にリサイズ可能）
         let bitmap;
         try {
+          // サンプリング用に縮小ビットマップを作る（高速）
+          // まず簡易 bitmap で元サイズ確認
           const tmpBitmap = await createImageBitmap(blob);
           const sampScale = Math.min(1, sampleMax / Math.max(tmpBitmap.width || 1, tmpBitmap.height || 1));
           const sampW = Math.max(1, Math.floor((tmpBitmap.width || 1) * sampScale));
           const sampH = Math.max(1, Math.floor((tmpBitmap.height || 1) * sampScale));
+          // 高品質リサイズを使って縮小 bitmap を作る（ブラウザに任せる）
           bitmap = await createImageBitmap(tmpBitmap, { resizeWidth: sampW, resizeHeight: sampH, resizeQuality: 'high' });
           tmpBitmap.close?.();
         } catch (e) {
@@ -241,6 +249,7 @@ async function startViewer() {
           continue;
         }
 
+        // サンプリングして平均彩度を計算
         const sW = bitmap.width, sH = bitmap.height;
         const sampCanvas = document.createElement('canvas');
         sampCanvas.width = sW; sampCanvas.height = sH;
@@ -261,45 +270,46 @@ async function startViewer() {
         let count = 0, sumSat = 0;
         for (let y = 0; y < sH; y += sampleStep) {
           for (let x = 0; x < sW; x += sampleStep) {
-            const i = (y * sH + x) * 4; // bugfix：誤った idx を防ぐ below using (y * sW + x)
-            // NOTE: fixed index below
-          }
-        }
-        // Recompute correctly (we re-run sampling loop properly)
-        let sumSat2 = 0, cnt2 = 0;
-        for (let y = 0; y < sH; y += sampleStep) {
-          for (let x = 0; x < sW; x += sampleStep) {
             const i = (y * sW + x) * 4;
             const r = data[i], g = data[i+1], b = data[i+2];
             const rn = r/255, gn = g/255, bn = b/255;
             const mx = Math.max(rn, gn, bn), mn = Math.min(rn, gn, bn);
             const l = (mx + mn)/2;
             const s = (mx === mn) ? 0 : (l > 0.5 ? (mx - mn) / (2 - mx - mn) : (mx - mn) / (mx + mn));
-            sumSat2 += s;
-            cnt2++;
+            sumSat += s;
+            count++;
           }
         }
-        const avgSat = cnt2 > 0 ? (sumSat2 / cnt2) : 0;
+        const avgSat = count > 0 ? (sumSat / count) : 0;
         bitmap.close?.();
 
+        // 色付きなら CSS filter 適用の方が軽い（今回は「無彩色のみ反転」が目的）
         if (avgSat >= imageSatThreshold) {
+          // カラフル画像：維持（可能なら以前の objectURL を revoke）
           const prev = objectUrlMap.get(imgEl);
           if (prev && prev.url) {
+            // もし以前に object URL を作って置き換えていたら revoke
             if (prev.revokeOnNext && prev.url.startsWith('blob:')) URL.revokeObjectURL(prev.url);
             objectUrlMap.delete(imgEl);
           }
           continue;
         }
 
+        // 無彩色判定：**反転処理を元解像度で行う**
+        // まず元 bitmap を作る（ただし巨大すぎる場合は上限を設ける）
         let fullBitmap;
         try {
+          // 元サイズ取得（再 createImageBitmap）
           const proto = await createImageBitmap(blob);
           const fullW = proto.width || 1, fullH = proto.height || 1;
+          // 制限を超える場合はフルサイズ反転を避ける（代わりに CSS filter を使うか縮小反転）
           if (Math.max(fullW, fullH) > maxFullSizeForInvert) {
+            // 重いので CSS filter を適用して代替（低コスト・見た目ほぼ同等）
             imgEl.style.filter = 'invert(1)';
             proto.close?.();
             continue;
           }
+          // createImageBitmap でフルサイズ bitmap（高品質）
           fullBitmap = await createImageBitmap(proto);
           proto.close?.();
         } catch (e) {
@@ -308,6 +318,7 @@ async function startViewer() {
           continue;
         }
 
+        // フルサイズ canvas に描画して反転（アンプレマルチ→反転→再マルチ）
         const fW = fullBitmap.width, fH = fullBitmap.height;
         const fullCanvas = document.createElement('canvas');
         fullCanvas.width = fW; fullCanvas.height = fH;
@@ -326,27 +337,37 @@ async function startViewer() {
           continue;
         }
         const fdata = fullImgData.data;
+        // アンプレマルチ処理 + 反転 + 再マルチ
         for (let i = 0; i < fdata.length; i += 4) {
           const a = fdata[i+3] / 255;
           if (a === 0) continue;
+          // アンプレマルチ (素材がプレマルチなら分離)
           let r = fdata[i] / a;
           let g = fdata[i+1] / a;
           let b = fdata[i+2] / a;
-          r = 255 - r; g = 255 - g; b = 255 - b;
+          // 反転（0..255範囲）
+          r = 255 - r;
+          g = 255 - g;
+          b = 255 - b;
+          // 再プレマルチ
           fdata[i]   = Math.round(r * a);
           fdata[i+1] = Math.round(g * a);
           fdata[i+2] = Math.round(b * a);
+          // alpha はそのまま
         }
         fctx.putImageData(fullImgData, 0, 0);
 
+        // toBlob -> objectURL にして置換（メモリ効率良）
         try {
           const blobOut = await new Promise((resolve) => fullCanvas.toBlob(resolve, 'image/png'));
           if (!blobOut) throw new Error('toBlob returned null');
           const objUrl = URL.createObjectURL(blobOut);
+          // revoke old url if we created one before
           const prev = objectUrlMap.get(imgEl);
           if (prev && prev.url && prev.revokeOnNext && prev.url.startsWith('blob:')) {
             URL.revokeObjectURL(prev.url);
           }
+          // set new href (both href & xlink)
           imgEl.setAttribute('href', objUrl);
           imgEl.setAttributeNS('http://www.w3.org/1999/xlink', 'href', objUrl);
           objectUrlMap.set(imgEl, { url: objUrl, revokeOnNext: true });
@@ -372,93 +393,7 @@ async function startViewer() {
   } // processSvgImagesHighQuality
 
   // ----------------------------
-  // テキスト overlay ヘルパー
-  // ----------------------------
-  function looksGoodTextContent(tc) {
-    if (!tc || !tc.items || tc.items.length === 0) return false;
-    const sample = tc.items.slice(0, 20).map(i => i.str).join('');
-    return /[0-9A-Za-z\u3000-\u30FF\u4E00-\u9FFF]/.test(sample);
-  }
-
-  // matrix multiply helper (2x3 transforms in pdf.js style)
-  function multiplyTransform(a, b) {
-    // both are arrays length 6: [a, b, c, d, e, f] (SVG/PDF affine)
-    return [
-      a[0] * b[0] + a[1] * b[2],
-      a[0] * b[1] + a[1] * b[3],
-      a[2] * b[0] + a[3] * b[2],
-      a[2] * b[1] + a[3] * b[3],
-      a[4] * b[0] + a[5] * b[2] + b[4],
-      a[4] * b[1] + a[5] * b[3] + b[5]
-    ];
-  }
-
-  // transformPoint: apply transform to [x,y] using matrix [a,b,c,d,e,f]
-  function transformPoint(tx, x, y) {
-    return {
-      x: tx[0] * x + tx[2] * y + tx[4],
-      y: tx[1] * x + tx[3] * y + tx[5]
-    };
-  }
-
-  // create text overlay from textContent and viewport, append into pageDiv
-  function renderTextLayerFromTextContent(textContent, viewport, pageDiv) {
-    // container for overlay
-    const textLayer = document.createElement('div');
-    textLayer.className = 'textLayer';
-    textLayer.style.position = 'absolute';
-    textLayer.style.left = '0';
-    textLayer.style.top = '0';
-    textLayer.style.width = pageDiv.style.width;
-    textLayer.style.height = pageDiv.style.height;
-    textLayer.style.pointerEvents = 'none';
-    textLayer.style.overflow = 'visible';
-    textLayer.style.zIndex = '2';
-    pageDiv.style.position = 'relative';
-    pageDiv.appendChild(textLayer);
-
-    // viewport.transform: use to map PDF text coords to page DOM coords
-    const vtm = viewport.transform; // [a,b,c,d,e,f]
-    textContent.items.forEach(item => {
-      // item.transform exists, combine transforms
-      let itemTransform = item.transform || [1,0,0,1,0,0];
-      let tx;
-      try {
-        if (pdfjsLib && pdfjsLib.Util && typeof pdfjsLib.Util.transform === 'function') {
-          tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
-        } else {
-          tx = multiplyTransform(vtm, itemTransform);
-        }
-      } catch (e) {
-        tx = multiplyTransform(vtm, itemTransform);
-      }
-
-      const left = tx[4];
-      const top = tx[5];
-      // font-size approximation
-      const fontHeight = Math.hypot(tx[1], tx[3]) || (item.height || 12);
-
-      const span = document.createElement('span');
-      span.textContent = item.str;
-      span.style.position = 'absolute';
-      span.style.left = `${left}px`;
-      // baseline adjustment: top - fontHeight is a reasonable start
-      span.style.top = `${top - fontHeight}px`;
-      span.style.fontSize = `${fontHeight}px`;
-      span.style.whiteSpace = 'pre';
-      span.style.color = '#fff'; // 反転背景なら白文字で固定（必要なら可変に）
-      span.style.lineHeight = '1';
-      span.style.transformOrigin = '0 0';
-      span.style.pointerEvents = 'auto'; // これで選択が可能になる
-      // optional: set font-family fallback for readability (not required)
-      // span.style.fontFamily = 'sans-serif';
-
-      textLayer.appendChild(span);
-    });
-  }
-
-  // ----------------------------
-  // ページ描画ループ（統合）
+  // ページ描画ループ
   // ----------------------------
   for (let p = 1; p <= pdf.numPages; p++) {
     try {
@@ -476,41 +411,31 @@ async function startViewer() {
       pageDiv.appendChild(svg);
       container.appendChild(pageDiv);
 
-      // 1) 既存のスマート反転（テキスト要素やパス等）
+      // テキスト/パスのスマート反転
       invertSvgColorsSmart(svg, { satThreshold: 0.15 });
 
-      // 2) テキストの正当性を確認して overlay を作る
-      let textContent;
-      try {
-        textContent = await page.getTextContent();
-      } catch (e) {
-        console.warn('getTextContent failed', e);
-        textContent = null;
-      }
-
-      if (looksGoodTextContent(textContent)) {
-        // hide original svg text to avoid duplicate visuals
-        svg.querySelectorAll('text').forEach(t => {
-          // 透明にして選択/表示の影響を抑える
-          t.setAttribute('fill', 'none');
-          // optionally: t.style.visibility = 'hidden';
-        });
-
-        // render overlay text using pdf.js textContent (これがコピー可能な正しい文字列)
-        renderTextLayerFromTextContent(textContent, viewport, pageDiv);
-      } else {
-        // fallback: no overlay (keep SVG as-is, which is already color-adjusted)
-      }
-
-      // 3) 画像は高品質処理（必要なら反転）
+      // 画像を高品質で処理（重いので await）
       await processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
 
+      //////テキスト用デバッガー
+        const textContent = await page.getTextContent();
+        console.log('Text content items sample:', textContent.items.slice(0,10).map(i => i.str));
+        function looksGood(tc) {
+          const sample = tc.items.slice(0,20).map(i => i.str).join('');
+          // 簡易判定: 英数字or日本語の文字が含まれるか
+          return /[0-9A-Za-z\u3000-\u30FF\u4E00-\u9FFF]/.test(sample);
+        }
+        console.log('looksGood:', looksGood(textContent));
+
+      //////
+      
     } catch (err) {
       console.error('Error rendering page', p, err);
       const errDiv = document.createElement('div');
       errDiv.textContent = `Error rendering page ${p}: ${err.message || err}`;
       container.appendChild(errDiv);
     }
+    
   }
 
   // スクロールトップ
