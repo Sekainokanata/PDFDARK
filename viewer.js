@@ -389,99 +389,195 @@ async function startViewer() {
   // ----------------------------
   const objectUrlMap = new Map();
   async function processSvgImagesHighQuality(svgRoot, options = {}) {
-    const imageSatThreshold = options.imageSatThreshold ?? 0.08;
-    const sampleMax = options.sampleMax ?? 200;
-    const sampleStep = options.sampleStep ?? 6;
-    const maxFullSizeForInvert = options.maxFullSizeForInvert ?? 2500;
+  // options のデフォルト（必要なら起動時に調整してね）
+  const imageSatThreshold = options.imageSatThreshold ?? 0.05; // 以前の「彩度でinvert判定」用（残した）
+  const sampleMax = options.sampleMax ?? 200;
+  const sampleStep = options.sampleStep ?? 6;
 
-    const images = Array.from(svgRoot.querySelectorAll('image'));
-    for (const imgEl of images) {
+  // 写真判定用閾値（保守的に設定）
+  const photoThresh = {
+    avgSat: options.photoAvgSat ?? 0.05,       // 平均彩度がこれ以上なら写真っぽい
+    colorStd: options.photoColorStd ?? 5,     // 色の標準偏差（0-255スケール） >= この値なら写真っぽい
+    entropy: options.photoEntropy ?? 4.0,      // 輝度エントロピー（bits）
+    edgeDensity: options.photoEdgeDensity ?? 0.06 // エッジピクセル比（0-1）
+  };
+
+  const images = Array.from(svgRoot.querySelectorAll('image'));
+  for (const imgEl of images) {
+    try {
+      let href = imgEl.getAttribute('href') || imgEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || imgEl.getAttribute('xlink:href');
+      if (!href) continue;
+
+      // fetch blob
+      let blob;
       try {
-        let href = imgEl.getAttribute('href') || imgEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || imgEl.getAttribute('xlink:href');
-        if (!href) continue;
+        const respImg = await fetch(href);
+        if (!respImg.ok) { console.warn('image fetch failed', href, respImg.status); continue; }
+        blob = await respImg.blob();
+      } catch (e) {
+        console.warn('image fetch error', e, href);
+        continue;
+      }
 
-        let blob;
-        try {
-          const respImg = await fetch(href);
-          if (!respImg.ok) { console.warn('image fetch failed', href, respImg.status); continue; }
-          blob = await respImg.blob();
-        } catch (e) {
-          console.warn('image fetch error', e, href);
-          continue;
+      // create a sampled bitmap for fast stats
+      let tmpBitmap;
+      try {
+        tmpBitmap = await createImageBitmap(blob);
+      } catch (e) {
+        console.warn('createImageBitmap failed on image', e);
+        // fallback to CSS invert if cannot analyze
+        imgEl.style.filter = 'invert(1)';
+        continue;
+      }
+
+      // compute a sample size not larger than sampleMax
+      const sampScale = Math.min(1, sampleMax / Math.max(tmpBitmap.width || 1, tmpBitmap.height || 1));
+      const sampW = Math.max(1, Math.floor((tmpBitmap.width || 1) * sampScale));
+      const sampH = Math.max(1, Math.floor((tmpBitmap.height || 1) * sampScale));
+
+      // draw sample into canvas
+      const sampCanvas = document.createElement('canvas');
+      sampCanvas.width = sampW; sampCanvas.height = sampH;
+      const sctx = sampCanvas.getContext('2d');
+      sctx.imageSmoothingEnabled = true;
+      sctx.imageSmoothingQuality = 'high';
+      sctx.drawImage(tmpBitmap, 0, 0, sampW, sampH);
+      tmpBitmap.close?.();
+
+      // try to read pixel data (may throw if tainted)
+      let imgData;
+      try {
+        imgData = sctx.getImageData(0, 0, sampW, sampH);
+      } catch (e) {
+        console.warn('getImageData sampling failed (tainted?), fallback to CSS filter', e);
+        imgEl.style.filter = 'invert(1)';
+        continue;
+      }
+
+      const data = imgData.data;
+
+      // --- compute features: avgSat, color stddev, luminance entropy, edge density ---
+      // avgSat: average saturation by converting RGB->HSL sample
+      let sumSat = 0;
+      // color channels statistics
+      let sumR = 0, sumG = 0, sumB = 0;
+      const pixelCount = sampW * sampH;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i+1], b = data[i+2];
+        sumR += r; sumG += g; sumB += b;
+
+        // compute saturation component quickly (RGB->HSL)
+        const rn = r/255, gn = g/255, bn = b/255;
+        const mx = Math.max(rn, gn, bn), mn = Math.min(rn, gn, bn);
+        const l = (mx + mn) / 2;
+        const s = (mx === mn) ? 0 : (l > 0.5 ? (mx - mn) / (2 - mx - mn) : (mx - mn) / (mx + mn));
+        sumSat += s;
+      }
+      const avgSat = sumSat / pixelCount;
+
+      // color stddev (approx on R/G/B combined)
+      const meanR = sumR / pixelCount, meanG = sumG / pixelCount, meanB = sumB / pixelCount;
+      let varSum = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i+1], b = data[i+2];
+        const dr = r - meanR, dg = g - meanG, db = b - meanB;
+        // use combined magnitude as color distance
+        const mag = Math.sqrt(dr*dr + dg*dg + db*db);
+        varSum += mag*mag;
+      }
+      const colorStd = Math.sqrt(varSum / pixelCount);
+
+      // luminance array for entropy and edge detection
+      const lum = new Float32Array(pixelCount);
+      for (let y=0, idx=0; y<sampH; y++) {
+        for (let x=0; x<sampW; x++, idx++) {
+          const i = (y*sampW + x) * 4;
+          const r = data[i], g = data[i+1], b = data[i+2];
+          // standard luminance
+          lum[idx] = (0.2126*r + 0.7152*g + 0.0722*b) / 255;
         }
+      }
 
-        let bitmap;
-        try {
-          const tmpBitmap = await createImageBitmap(blob);
-          const sampScale = Math.min(1, sampleMax / Math.max(tmpBitmap.width || 1, tmpBitmap.height || 1));
-          const sampW = Math.max(1, Math.floor((tmpBitmap.width || 1) * sampScale));
-          const sampH = Math.max(1, Math.floor((tmpBitmap.height || 1) * sampScale));
-          bitmap = await createImageBitmap(tmpBitmap, { resizeWidth: sampW, resizeHeight: sampH, resizeQuality: 'high' });
-          tmpBitmap.close?.();
-        } catch (e) {
-          console.warn('createImageBitmap(sampling) failed', e);
-          continue;
+      // entropy calculation (on luminance histogram)
+      const histBins = 64;
+      const hist = new Uint32Array(histBins);
+      for (let i=0;i<lum.length;i++){
+        const v = Math.min(histBins-1, Math.floor(lum[i] * histBins));
+        hist[v]++;
+      }
+      let entropy = 0;
+      for (let b=0;b<histBins;b++){
+        if (hist[b] === 0) continue;
+        const p = hist[b] / pixelCount;
+        entropy -= p * Math.log2(p);
+      }
+
+      // edge density via simple Sobel approximation on luminance
+      // kernels
+      let edgeCount = 0;
+      for (let y=1; y<sampH-1; y+=1) {
+        for (let x=1; x<sampW-1; x+=1) {
+          const idx = y*sampW + x;
+          const gx = (
+            -1*lum[idx - sampW - 1] + 1*lum[idx - sampW + 1] +
+            -2*lum[idx - 1]       + 2*lum[idx + 1] +
+            -1*lum[idx + sampW - 1] + 1*lum[idx + sampW + 1]
+          );
+          const gy = (
+            -1*lum[idx - sampW - 1] + -2*lum[idx - sampW] + -1*lum[idx - sampW + 1] +
+             1*lum[idx + sampW - 1] +  2*lum[idx + sampW] +  1*lum[idx + sampW + 1]
+          );
+          const g = Math.hypot(gx, gy);
+          // threshold gradient magnitude to count as edge
+          if (g > 0.2) edgeCount++;
         }
+      }
+      const totalEdgeTest = (sampW-2)*(sampH-2) || 1;
+      const edgeDensity = edgeCount / totalEdgeTest;
 
-        const sW = bitmap.width, sH = bitmap.height;
-        const sampCanvas = document.createElement('canvas');
-        sampCanvas.width = sW; sampCanvas.height = sH;
-        const sctx = sampCanvas.getContext('2d');
-        sctx.imageSmoothingEnabled = true;
-        sctx.imageSmoothingQuality = 'high';
-        sctx.drawImage(bitmap, 0, 0, sW, sH);
+      // --- decide photograph or graphic/text ---
+      const isPhoto =
+        (avgSat >= photoThresh.avgSat && colorStd >= photoThresh.colorStd && entropy >= photoThresh.entropy && edgeDensity >= photoThresh.edgeDensity)
+        // OR if avgSat big and entropy big even if colorStd smaller -> still photo
+        || (avgSat >= (photoThresh.avgSat * 1.2) && entropy >= (photoThresh.entropy * 0.9));
 
-        let imgData;
-        try {
-          imgData = sctx.getImageData(0, 0, sW, sH);
-        } catch (e) {
-          console.warn('getImageData failed on sample (tainted?), skipping image', e);
-          bitmap.close?.();
-          continue;
+      // Debug logging (必要に応じてコメントアウト)
+      // console.log('img stats', { avgSat, colorStd, entropy, edgeDensity, isPhoto });
+
+      if (isPhoto) {
+        // 写真っぽい -> 反転しない（先に置かれている可能性のある prev blob を削除）
+        const prev = objectUrlMap.get(imgEl);
+        if (prev && prev.url) {
+          if (prev.revokeOnNext && prev.url.startsWith('blob:')) URL.revokeObjectURL(prev.url);
+          objectUrlMap.delete(imgEl);
         }
-        const data = imgData.data;
-        let sumSat2 = 0, cnt2 = 0;
-        for (let y = 0; y < sH; y += sampleStep) {
-          for (let x = 0; x < sW; x += sampleStep) {
-            const i = (y * sW + x) * 4;
-            const r = data[i], g = data[i+1], b = data[i+2];
-            const rn = r/255, gn = g/255, bn = b/255;
-            const mx = Math.max(rn, gn, bn), mn = Math.min(rn, gn, bn);
-            const l = (mx + mn)/2;
-            const s = (mx === mn) ? 0 : (l > 0.5 ? (mx - mn) / (2 - mx - mn) : (mx - mn) / (mx + mn));
-            sumSat2 += s;
-            cnt2++;
-          }
-        }
-        const avgSat = cnt2 > 0 ? (sumSat2 / cnt2) : 0;
-        bitmap.close?.();
+        continue; // skip inversion
+      }
 
-        if (avgSat >= imageSatThreshold) {
-          const prev = objectUrlMap.get(imgEl);
-          if (prev && prev.url) {
-            if (prev.revokeOnNext && prev.url.startsWith('blob:')) URL.revokeObjectURL(prev.url);
-            objectUrlMap.delete(imgEl);
-          }
-          continue;
-        }
-
-        let fullBitmap;
-        try {
-          const proto = await createImageBitmap(blob);
-          const fullW = proto.width || 1, fullH = proto.height || 1;
-          if (Math.max(fullW, fullH) > maxFullSizeForInvert) {
-            imgEl.style.filter = 'invert(1)';
-            proto.close?.();
-            continue;
-          }
-          fullBitmap = await createImageBitmap(proto);
-          proto.close?.();
-        } catch (e) {
-          console.warn('createImageBitmap(full) failed, falling back to CSS filter', e);
+      // --- 非写真（グラフや文字画像）なら既存の高品質反転処理を続行 ---
+      // 以下は君が既に持ってる「フルサイズで反転して置き換える」ロジックの流れを踏襲する。
+      // まず try to load fullBitmap; if too large, fallback to CSS invert
+      let fullBitmap;
+      try {
+        const proto = await createImageBitmap(blob);
+        const fullW = proto.width || 1, fullH = proto.height || 1;
+        // 太デカ画像は createImageBitmap(full) 負荷が大きくなるから CSS filter にする基準
+        const maxFullSizeForInvert = options.maxFullSizeForInvert ?? 2500;
+        if (Math.max(fullW, fullH) > maxFullSizeForInvert) {
           imgEl.style.filter = 'invert(1)';
+          proto.close?.();
           continue;
         }
+        fullBitmap = await createImageBitmap(proto);
+        proto.close?.();
+      } catch (e) {
+        console.warn('createImageBitmap(full) failed, fallback to CSS filter', e);
+        imgEl.style.filter = 'invert(1)';
+        continue;
+      }
 
+      // draw full, invert pixels, upload blob
+      try {
         const fW = fullBitmap.width, fH = fullBitmap.height;
         const fullCanvas = document.createElement('canvas');
         fullCanvas.width = fW; fullCanvas.height = fH;
@@ -499,6 +595,7 @@ async function startViewer() {
           imgEl.style.filter = 'invert(1)';
           continue;
         }
+
         const fdata = fullImgData.data;
         for (let i = 0; i < fdata.length; i += 4) {
           const a = fdata[i+3] / 255;
@@ -513,37 +610,30 @@ async function startViewer() {
         }
         fctx.putImageData(fullImgData, 0, 0);
 
-        try {
-          const blobOut = await new Promise((resolve) => fullCanvas.toBlob(resolve, 'image/png'));
-          if (!blobOut) throw new Error('toBlob returned null');
-          const objUrl = URL.createObjectURL(blobOut);
-          const prev = objectUrlMap.get(imgEl);
-          if (prev && prev.url && prev.revokeOnNext && prev.url.startsWith('blob:')) {
-            URL.revokeObjectURL(prev.url);
-          }
-          imgEl.setAttribute('href', objUrl);
-          imgEl.setAttributeNS('http://www.w3.org/1999/xlink', 'href', objUrl);
-          objectUrlMap.set(imgEl, { url: objUrl, revokeOnNext: true });
-        } catch (e) {
-          console.warn('toBlob/createObjectURL failed, fallback to dataURL', e);
-          try {
-            const dataUrl = fullCanvas.toDataURL('image/png');
-            imgEl.setAttribute('href', dataUrl);
-            imgEl.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUrl);
-            objectUrlMap.set(imgEl, { url: null, revokeOnNext: false });
-          } catch (e2) {
-            console.warn('fallback toDataURL failed', e2);
-            imgEl.style.filter = 'invert(1)';
-          }
-        } finally {
-          fullBitmap.close?.();
+        const blobOut = await new Promise((resolve) => fullCanvas.toBlob(resolve, 'image/png'));
+        if (!blobOut) throw new Error('toBlob returned null');
+        const objUrl = URL.createObjectURL(blobOut);
+        const prev = objectUrlMap.get(imgEl);
+        if (prev && prev.url && prev.revokeOnNext && prev.url.startsWith('blob:')) {
+          URL.revokeObjectURL(prev.url);
         }
-      } catch (err) {
-        console.warn('processSvgImagesHighQuality error', err);
-        continue;
+        imgEl.setAttribute('href', objUrl);
+        imgEl.setAttributeNS('http://www.w3.org/1999/xlink', 'href', objUrl);
+        objectUrlMap.set(imgEl, { url: objUrl, revokeOnNext: true });
+      } catch (e) {
+        console.warn('full invert failed, fallback to CSS filter', e);
+        imgEl.style.filter = 'invert(1)';
+      } finally {
+        fullBitmap.close?.();
       }
+
+    } catch (err) {
+      console.warn('processSvgImagesHighQuality error', err);
+      continue;
     }
   }
+}
+
 
   // ----------------------------
   // text overlay helpers (improved)
