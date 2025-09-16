@@ -655,99 +655,96 @@ async function startViewer() {
     ];
   }
 
-  function renderTextLayerFromTextContent(textContent, viewport, pageDiv, options = {}) {
-    options = Object.assign({ forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#fff', zIndex: 3000 }, options);
+  // 既存の renderTextLayerFromTextContent を以下に置き換えてください
+function renderTextLayerFromTextContent(textContent, viewport, pageDiv, options = {}) {
+  options = Object.assign({ forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#fff', zIndex: 3000 }, options);
 
-    if (getComputedStyle(pageDiv).position === 'static') pageDiv.style.position = 'relative';
+  // --- 重要: textLayer を paper の中に入れる ---
+  const paper = pageDiv.querySelector('.paper') || pageDiv;
+  // ensure paper is positioned so absolute children are relative to it
+  if (getComputedStyle(paper).position === 'static') paper.style.position = 'relative';
 
-    const textLayer = document.createElement('div');
-    textLayer.className = 'textLayer';
-    Object.assign(textLayer.style, {
-      position: 'absolute',
-      left: '0',
-      top: '0',
-      width: pageDiv.style.width,
-      height: pageDiv.style.height,
-      pointerEvents: 'auto',
-      overflow: 'visible',
-      zIndex: String(options.zIndex),
-      background: 'transparent',
-      mixBlendMode: 'normal'
-    });
+  const textLayer = document.createElement('div');
+  textLayer.className = 'textLayer';
+  Object.assign(textLayer.style, {
+    position: 'absolute',
+    left: '0',
+    top: '0',
+    width: paper.style.width || pageDiv.style.width || (pageDiv.getAttribute('data-base-width') + 'px'),
+    height: paper.style.height || pageDiv.style.height || (pageDiv.getAttribute('data-base-height') + 'px'),
+    pointerEvents: 'auto',
+    overflow: 'visible',
+    zIndex: String(options.zIndex),
+    background: 'transparent',
+    mixBlendMode: 'normal',
+    transformOrigin: '0 0'
+  });
 
-    pageDiv.appendChild(textLayer);
+  // append into paper instead of pageDiv so it scales with paper's transform
+  paper.appendChild(textLayer);
 
-    const vtm = viewport.transform;
-    textContent.items.forEach(item => {
-      let itemTransform = item.transform || [1,0,0,1,0,0];
-      let tx;
-      try {
-        if (pdfjsLib && pdfjsLib.Util && typeof pdfjsLib.Util.transform === 'function') {
-          tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
-        } else {
-          tx = multiplyTransform(vtm, itemTransform);
-        }
-      } catch (e) {
+  const vtm = viewport.transform;
+  textContent.items.forEach(item => {
+    let itemTransform = item.transform || [1,0,0,1,0,0];
+    let tx;
+    try {
+      if (pdfjsLib && pdfjsLib.Util && typeof pdfjsLib.Util.transform === 'function') {
+        tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+      } else {
         tx = multiplyTransform(vtm, itemTransform);
       }
-
-      const left = tx[4];
-      const top = tx[5];
-      const fontHeight = Math.hypot(tx[1], tx[3]) || (item.height || 12);
-
-      const span = document.createElement('span');
-      span.textContent = item.str;
-
-      // 例：span.style の割当部（既存のものの中に追加）
-      Object.assign(span.style, {
-        position: 'absolute',
-        left: `${left}px`,
-        top: `${top - fontHeight}px`,
-        fontSize: `${fontHeight}px`,
-        whiteSpace: 'pre',
-        lineHeight: '1',
-        transformOrigin: '0 0',
-        // ここが追加（初期は非選択。applyModeToAllPages が後から切り替える）
-        pointerEvents: 'none',
-        userSelect: 'none',
-        WebkitUserSelect: 'none',
-        MozUserSelect: 'none',
-        color: options.color,
-        WebkitTextFillColor: options.color
-      });
-
-
-
-      textLayer.appendChild(span);
-    });
-
-    const svgElem = pageDiv.querySelector('svg');
-    const hasSvgText = !!svgElem && !!svgElem.querySelector('text, tspan');
-    const shouldBeVisible = options.forceVisible || (!hasSvgText) || !options.makeTransparentIfSvgTextExists;
-
-    textLayer.querySelectorAll('span').forEach(s => {
-      if (shouldBeVisible) {
-        s.style.color = options.color;
-        s.style.WebkitTextFillColor = options.color;
-      } else {
-        s.style.color = 'transparent';
-        s.style.WebkitTextFillColor = 'transparent';
-        s.style.pointerEvents = 'auto';
-      }
-    });
-
-    if (svgElem) {
-      const svgStyle = svgElem.style;
-      if (!svgStyle.position || svgStyle.position === 'static') svgStyle.position = 'absolute';
-      try {
-        svgStyle.zIndex = String((parseInt(svgStyle.zIndex) || 0) - 1);
-      } catch (e) {
-        svgStyle.zIndex = '1';
-      }
+    } catch (e) {
+      tx = multiplyTransform(vtm, itemTransform);
     }
 
-    return textLayer;
-  }
+    const left = tx[4];
+    const top = tx[5];
+    const fontHeight = Math.hypot(tx[1], tx[3]) || (item.height || 12);
+
+    const span = document.createElement('span');
+    span.textContent = item.str;
+
+    // absolute positioning inside paper (paper will be scaled later)
+    Object.assign(span.style, {
+      position: 'absolute',
+      left: `${left}px`,
+      top: `${top - fontHeight}px`,
+      fontSize: `${fontHeight}px`,
+      whiteSpace: 'pre',
+      lineHeight: '1',
+      transformOrigin: '0 0',
+      pointerEvents: 'none', // default non-selectable; applyModeToAllPages will flip
+      userSelect: 'none',
+      WebkitUserSelect: 'none',
+      MozUserSelect: 'none',
+      color: options.color,
+      WebkitTextFillColor: options.color
+    });
+
+    textLayer.appendChild(span);
+  });
+
+  // decide visibility: if SVG already has text, we often hide overlay by default
+  const svgElem = pageDiv.querySelector('svg');
+  const hasSvgText = !!svgElem && !!svgElem.querySelector('text, tspan');
+  const shouldBeVisible = options.forceVisible || (!hasSvgText) || !options.makeTransparentIfSvgTextExists;
+
+  textLayer.querySelectorAll('span').forEach(s => {
+    if (shouldBeVisible) {
+      s.style.color = options.color;
+      s.style.WebkitTextFillColor = options.color;
+    } else {
+      s.style.color = 'transparent';
+      s.style.WebkitTextFillColor = 'transparent';
+      s.style.pointerEvents = 'auto';
+    }
+  });
+
+  // 保険: svg が paper の中にある場合、textLayer は後から append されてるので自然に上に来る。
+  // もし z-index を強制したければここで調整する（通常不要）
+  return textLayer;
+}
+
 
   // ----------------------------
   // toolbar wiring: zoom/navigation/download/print/mode
