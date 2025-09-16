@@ -665,23 +665,34 @@ async function startViewer() {
     function applyScaleToAllPages(scale) {
       const pages = ui.pagesHolder.querySelectorAll('.page');
       pages.forEach(pageDiv => {
-        // set transform and also adjust the layout size so container scroll works properly
-        pageDiv.style.transform = `scale(${scale})`;
-        const baseW = parseFloat(pageDiv.getAttribute('data-base-width') || pageDiv.style.width || pageDiv.clientWidth);
-        const baseH = parseFloat(pageDiv.getAttribute('data-base-height') || pageDiv.style.height || pageDiv.clientHeight);
-        // width/height of outer (so scroll area accounts for scaled size)
+        const baseW = parseFloat(pageDiv.getAttribute('data-base-width') || pageDiv.style.width || pageDiv.clientWidth) || 0;
+        const baseH = parseFloat(pageDiv.getAttribute('data-base-height') || pageDiv.style.height || pageDiv.clientHeight) || 0;
+
+        // set outer container size to scaled logical size so scrolling/レイアウトが正しくなる
         pageDiv.style.width = (baseW * scale) + 'px';
         pageDiv.style.height = (baseH * scale) + 'px';
-        // additionally ensure the inner paper keeps correct size (optional)
+
+        // scale the inner paper (actual visible sheet)
         const paper = pageDiv.querySelector('.paper');
         if (paper) {
-          paper.style.width = '100%';
-          paper.style.height = '100%';
+          paper.style.transform = `scale(${scale})`;
+          paper.style.transformOrigin = '0 0';
+          // ensure internal svg has pixel size equal to base so scaled result looks sharp
+          const svg = paper.querySelector('svg');
+          if (svg) {
+            // set svg width/height to base px to avoid fractional CSS-scaling artifacts
+            svg.style.width = baseW + 'px';
+            svg.style.height = baseH + 'px';
+            svg.setAttribute('width', baseW);
+            svg.setAttribute('height', baseH);
+          }
         }
       });
+
       currentScale = scale;
       ui.zoomVal.value = Math.round(scale * 100) + '%';
     }
+
 
 
     function fitWidth() {
@@ -841,36 +852,41 @@ async function startViewer() {
       const svg = await svgGfx.getSVG(opList, viewport);
 
       // create page outer + inner paper wrapper
+      // create page outer + inner paper wrapper
       const pageDiv = document.createElement('div');
       pageDiv.className = 'page';
       pageDiv.setAttribute('data-base-width', viewport.width);
       pageDiv.setAttribute('data-base-height', viewport.height);
-
-      // outer page: width/height represent the paper size INCLUDING padding area
+      // outer width/height represent the paper size (we will set scaled size later)
       pageDiv.style.width = viewport.width + 'px';
       pageDiv.style.height = viewport.height + 'px';
       pageDiv.style.transformOrigin = '0 0';
       pageDiv.style.overflow = 'visible';
+      pageDiv.style.display = 'block';
+      pageDiv.style.position = 'relative';
 
-      // inner paper element that holds SVG (paper is the visible white sheet)
+      // inner paper element that holds SVG (紙そのもの)
       const paper = document.createElement('div');
       paper.className = 'paper';
-      paper.style.width = '100%';
-      paper.style.height = '100%';
+      // Set explicit pixel size so scaling is stable
+      paper.style.width = viewport.width + 'px';
+      paper.style.height = viewport.height + 'px';
+      paper.style.transformOrigin = '0 0';
+
+      // Append svg into paper (keep SVG sizing natural)
       paper.appendChild(svg);
 
-      // append
+      // append paper and footer to pageDiv
       pageDiv.appendChild(paper);
-      container.appendChild(pageDiv);
 
-      // footer (if you still want it)
       const footer = document.createElement('div');
       footer.className = 'page-footer';
       footer.textContent = `Page ${p} / ${pdf.numPages}`;
       pageDiv.appendChild(footer);
 
-
+      // append pageDiv to pagesHolder
       container.appendChild(pageDiv);
+
 
       // color inversion for SVG elements
       invertSvgColorsSmart(svg, { satThreshold: 0.15 });

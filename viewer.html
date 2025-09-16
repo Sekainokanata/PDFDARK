@@ -62,28 +62,47 @@
 
   /* each page 'paper' */
   /* ページ周り（外枠） */
-  .page {
-    background: transparent;        /* 外側は透明に */
-    border-radius: 8px;
-    padding: 12px;                  /* ページと周囲の余白（紙を内包） */
-    display: inline-block;
-    transform-origin: 0 0;          /* scale の原点を左上に */
-    overflow: visible;              /* scale 時に切られないように */
-    box-sizing: content-box;
-    margin: 12px 0;
-  }
+  /* 外枠（ページコンテナ） */
+.page {
+  background: transparent;        /* 外側は透明に */
+  border-radius: 8px;
+  padding: 12px;                  /* ページと周囲の余白（紙を内包） */
+  display: block;                 /* 重要: inline-blockだと重なりや折返しの問題が出る */
+  transform-origin: 0 0;          /* default transform origin */
+  overflow: visible;
+  box-sizing: content-box;
+  margin: 18px 0;                 /* ページ間のスペース */
+  position: relative;             /* 重なり防止のため相対位置 */
+}
 
-  /* 実際の「紙」 */
-  .page .paper {
-    background: #ffffff;            /* 紙は白 */
-    border-radius: 4px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.45);
-    padding: 0;                     /* svg をそのまま入れるなら padding は 0 が安定 */
-    display: block;
-    width: 100%;
-    height: 100%;
-    overflow: visible;
-  }
+/* 実際の「紙」 */
+.page .paper {
+  background: #ffffff;
+  border-radius: 4px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+  padding: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;               /* svg はみ出しを切る */
+  transform-origin: 0 0;          /* scale をここにかけるので origin を左上に */
+}
+
+/* SVG のスタイル：必ず親に合わせて block 表示し、幅/高さは JSで固定する */
+.page .paper > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* footer は page の直下 */
+.page-footer {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #8a8a8a;
+  text-align: center;
+}
+
 
   /* wrapper（背景）をダークにして紙を際立たせる */
   #viewer-container-wrapper {
