@@ -697,6 +697,8 @@ async function startViewer() {
 
       const span = document.createElement('span');
       span.textContent = item.str;
+
+      // 例：span.style の割当部（既存のものの中に追加）
       Object.assign(span.style, {
         position: 'absolute',
         left: `${left}px`,
@@ -705,13 +707,17 @@ async function startViewer() {
         whiteSpace: 'pre',
         lineHeight: '1',
         transformOrigin: '0 0',
-        pointerEvents: 'auto',
-        userSelect: 'text',
-        WebkitUserSelect: 'text',
-        MozUserSelect: 'text',
+        // ここが追加（初期は非選択。applyModeToAllPages が後から切り替える）
+        pointerEvents: 'none',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        MozUserSelect: 'none',
         color: options.color,
         WebkitTextFillColor: options.color
       });
+
+
+
       textLayer.appendChild(span);
     });
 
@@ -846,46 +852,88 @@ async function startViewer() {
     function applyModeToAllPages(mode) {
       const pages = ui.pagesHolder.querySelectorAll('.page');
       pages.forEach(pageDiv => {
-        const svgElem = pageDiv.querySelector('svg');
-        const textLayer = pageDiv.querySelector('.textLayer');
+      const svgElem = pageDiv.querySelector('svg');
+      const textLayer = pageDiv.querySelector('.textLayer');
 
-        if (mode === 'svg') {
-          if (svgElem) {
-            svgElem.querySelectorAll('text, tspan').forEach(t => {
-              t.style.visibility = '';
-              if (t.hasAttribute('data-original-fill')) {
-                t.setAttribute('fill', t.getAttribute('data-original-fill'));
-              }
-            });
-          }
-          if (textLayer) {
-            textLayer.querySelectorAll('span').forEach(s => {
-              s.style.color = 'transparent';
-              s.style.WebkitTextFillColor = 'transparent';
-            });
-            textLayer.style.pointerEvents = 'auto';
-          }
-        } else {
-          if (svgElem) {
-            svgElem.querySelectorAll('text, tspan').forEach(t => {
-              if (!t.hasAttribute('data-original-fill')) {
-                const f = t.getAttribute('fill');
-                if (f) t.setAttribute('data-original-fill', f);
-              }
-              t.style.visibility = 'hidden';
-            });
-          }
-          if (textLayer) {
-            textLayer.querySelectorAll('span').forEach(s => {
-              s.style.color = '#fff';
-              s.style.WebkitTextFillColor = '#fff';
-            });
-            textLayer.style.zIndex = '3000';
-            textLayer.style.pointerEvents = 'auto';
-          }
+      if (mode === 'svg') {
+        // --- SVG優先モード ---
+        // 1) SVG側を選択可能に（通常の挙動）
+        if (svgElem) {
+          // Make svg interactive/selectable
+          svgElem.style.pointerEvents = ''; // allow normal pointer behavior
+          svgElem.style.userSelect = ''; // allow selection (browser default)
+          // reveal svg <text> (if hidden)
+          svgElem.querySelectorAll('text, tspan').forEach(t => {
+            t.style.visibility = '';
+            t.style.display = '';
+            t.style.pointerEvents = '';
+            t.style.userSelect = '';
+          });
         }
-      });
+
+        // 2) オーバーレイ側は「非選択」にして DOM 上から選択されないようにする
+        if (textLayer) {
+          // hide visually but keep it in DOM for programmatic copy if needed (we keep transparent)
+          textLayer.querySelectorAll('span').forEach(s => {
+            s.style.color = 'transparent';
+            s.style.WebkitTextFillColor = 'transparent';
+            s.style.pointerEvents = 'none'; // prevent selection by pointer
+            s.style.userSelect = 'none'; // prevent selection via drag
+            s.setAttribute('aria-hidden', 'true');
+          });
+          // ensure textLayer as a whole doesn't intercept interactions
+          textLayer.style.pointerEvents = 'none';
+          textLayer.style.userSelect = 'none';
+        }
+      } else {
+        // --- オーバーレイ優先モード ---
+        // 1) SVG側は選択不可能に（hide text elements and disable pointer/select)
+        if (svgElem) {
+          // hide textual SVG elements to avoid double visual/copy
+          svgElem.querySelectorAll('text, tspan').forEach(t => {
+            if (!t.hasAttribute('data-original-fill')) {
+              const f = t.getAttribute('fill');
+              if (f) t.setAttribute('data-original-fill', f);
+            }
+            t.style.visibility = 'hidden';
+            t.style.pointerEvents = 'none';
+            t.style.userSelect = 'none';
+          });
+          // disable pointer/select on svg so it doesn't interfere with overlay selection
+          svgElem.style.pointerEvents = 'none';
+          svgElem.style.userSelect = 'none';
+        }
+
+        // 2) オーバーレイ側を「可視かつ選択可能」にする
+        if (textLayer) {
+          textLayer.querySelectorAll('span').forEach(s => {
+            s.style.color = '#fff'; // or your overlay color
+            s.style.WebkitTextFillColor = '#fff';
+            s.style.pointerEvents = 'auto'; // allow selection via pointer
+            s.style.userSelect = 'text'; // allow text selection
+            s.removeAttribute('aria-hidden');
+          });
+          // ensure layer can receive pointer events for selection
+          textLayer.style.pointerEvents = 'auto';
+          textLayer.style.userSelect = 'text';
+          // Keep it visually on top
+          textLayer.style.zIndex = '3000';
+        }
+      }
+    });
+
+    // persist mode
+    try { localStorage.setItem('viewerTextMode', mode); } catch (_) {}
+    // update buttons visuals
+    if (mode === 'overlay') {
+      ui.btnOverlayMode.style.background = '#0a84ff';
+      ui.btnSvgMode.style.background = '#222';
+    } else {
+      ui.btnSvgMode.style.background = '#0a84ff';
+      ui.btnOverlayMode.style.background = '#222';
     }
+  }
+
 
     // initialize mode buttons
     function updateButtons(mode) {
