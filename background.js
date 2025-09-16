@@ -27,16 +27,15 @@ chrome.action.onClicked.addListener((tab) => {
 //======================ここから追加============================================
 // タブの情報（URLなど）が更新されたときに発火するイベントリスナー
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  // タブの読み込みが完了し、かつURLが変更されたときにチェック
-  // "complete"のチェックを入れることで、ページの構築が完了してから非表示処理を行う
+  if (changeInfo.status !== 'complete') return; // complete 以外は無視
+
   const url = tab.url;
-  // PDFっぽいURLだけ（拡張子やcontent-typeチェックは簡易）
+  if (!url) return; // url が undefined の場合は何もしない
+
   if (!url.match(/\.pdf(\?|$)/i)) {
-    // それでも開きたい？その場合は無条件で開くようにする
-    return;
+    return; // PDFじゃなければ無視
   }
-  if (changeInfo.status === 'complete' && tab.url) {
-    const viewerUrl = chrome.runtime.getURL("viewer.html") + "?file=" + encodeURIComponent(url);
-    chrome.tabs.update({ url: viewerUrl });
-  }
+
+  const viewerUrl = chrome.runtime.getURL("viewer.html") + "?file=" + encodeURIComponent(url);
+  chrome.tabs.update(tabId, { url: viewerUrl });
 });
