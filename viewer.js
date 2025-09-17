@@ -11,12 +11,12 @@
 // - startViewer() を呼べば動作します
 
 
-// viewer.js の最上部（pdfjsLib が global にある直後）に追加
-// -> これで worker の場所を pdfjs に教える
-pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('pdf.worker.js');
+// viewer.js の先頭付近（pdfjsLib が利用可能になった直後）に追加
+// worker の実際のパスが pdfjs/pdf.worker.js なら下の通り。存在場所に合わせてパスを変えてね。
+pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('pdfjs/pdf.worker.js');
 
-// CMap を拡張に同梱したときの URL（末尾スラッシュ OK）
-const cMapUrlForExtension = chrome.runtime.getURL('cmaps/');
+// cMap は pdfjs/cmaps/ に置いた前提
+const cMapUrlForExtension = chrome.runtime.getURL('pdfjs/cmaps/');
 
 
 
