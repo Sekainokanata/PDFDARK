@@ -13,5 +13,15 @@
   },
   "icons": {
     "48": "icon48.png"
+  },
+  "web_accessible_resources": [
+  {
+    "resources": [
+      "pdf.worker.js",
+      "cmaps/*"
+    ],
+    "matches": ["<all_urls>"]
   }
+]
+
 }
