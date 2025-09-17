@@ -10,6 +10,18 @@
 // - pdfjsLib が global にあること
 // - startViewer() を呼べば動作します
 
+
+// viewer.js の先頭付近（pdfjsLib が利用可能になった直後）に追加
+// worker の実際のパスが pdfjs/pdf.worker.js なら下の通り。存在場所に合わせてパスを変えてね。
+pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('pdfjs/pdf.worker.js');
+
+// cMap は pdfjs/cmaps/ に置いた前提
+const cMapUrlForExtension = chrome.runtime.getURL('pdfjs/cmaps/');
+
+
+
+
+
 async function startViewer() {
   const params = new URLSearchParams(location.search);
   const file = params.get('file');
@@ -31,8 +43,20 @@ async function startViewer() {
   const arrayBuffer = await resp.arrayBuffer();
 
   // load pdf
-  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+  //const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+  //const pdf = await loadingTask.promise;
+
+  // 既存の getDocument 呼び出しを差し替え
+  const loadingTask = pdfjsLib.getDocument({
+    data: arrayBuffer,
+    cMapUrl: cMapUrlForExtension,
+    cMapPacked: true,     // cmaps フォルダが packed (.bcmap) を含む場合は true。通常の .cmap のみなら false に
+    useWorkerFetch: true  // ワーカーに fetch を任せる (できる環境なら true)
+  });
   const pdf = await loadingTask.promise;
+
+
+
 
   // clear original container (we'll reparent into shell)
   origContainer.innerHTML = '';
