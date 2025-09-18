@@ -183,6 +183,51 @@ async function startViewer() {
     };
   })();
 
+  // ----------------------------
+// toolbar: add highlight buttons (貼り付け先: window.__viewer_ui = {...}; の直後)
+// ----------------------------
+function ensureHighlightButtonsExist(ui) {
+  if (!ui || !ui.toolbar) return;
+  if (!ui.btnHighlightToBlue) {
+    const b = document.createElement('button');
+    b.className = 'viewer-tool-btn';
+    b.textContent = 'ハイライト→青';
+    b.title = '黄色/黄緑/水色のハイライトを青に変換';
+    ui.toolbar.appendChild(b);
+    ui.btnHighlightToBlue = b;
+    b.addEventListener('click', () => {
+      const mapping = [
+        { src: '#ffff00', target: '#0000ff' },
+        { src: '#00ff00', target: '#0000ff' },
+        { src: '#00ffff', target: '#0000ff' }
+      ];
+      // backup originals once per page
+      document.querySelectorAll('.page').forEach(p => {
+        const svg = p.querySelector('svg');
+        if (svg) backupSvgColors(svg);
+      });
+      const changed = remapHighlightsAllPages(mapping, 30);
+      console.log('remapHighlightsAllPages changed:', changed);
+      if (changed === 0) console.log('No highlights matched — try increasing tolerance.');
+    });
+  }
+  if (!ui.btnHighlightRestore) {
+    const r = document.createElement('button');
+    r.className = 'viewer-tool-btn';
+    r.textContent = 'ハイライト戻す';
+    r.title = 'ハイライト色を元に戻す';
+    ui.toolbar.appendChild(r);
+    ui.btnHighlightRestore = r;
+    r.addEventListener('click', () => {
+      const restored = restoreAllPagesHighlights();
+      console.log('restoreAllPagesHighlights restored:', restored);
+    });
+  }
+}
+// call it now if UI exists
+try { ensureHighlightButtonsExist(window.__viewer_ui); } catch(e){ /* ignore */ }
+
+
   // now alias containerRef to pagesHolder for appending pages
   const container = window.__viewer_ui.pagesHolder;
 
@@ -407,6 +452,128 @@ async function startViewer() {
 
     svg.style.background = '#000';
   }
+
+  // ----------------------------
+// Highlight remapping utilities (貼り付け先: invertSvgColorsSmart の直後)
+// ----------------------------
+function hexToRgbObj(hex) {
+  if (!hex) return null;
+  hex = String(hex).trim().toLowerCase();
+  if (hex.startsWith('#')) {
+    let h = hex.slice(1);
+    if (h.length === 3) h = h.split('').map(c=>c+c).join('');
+    const n = parseInt(h,16);
+    return { r: (n>>16)&255, g: (n>>8)&255, b: n&255, a: 1 };
+  }
+  const m = hex.match(/^rgba?\(([^)]+)\)/);
+  if (m) {
+    const parts = m[1].split(',').map(s => s.trim());
+    return { r: parseFloat(parts[0]), g: parseFloat(parts[1]), b: parseFloat(parts[2]), a: parts[3]!==undefined ? parseFloat(parts[3]) : 1 };
+  }
+  const kws = { yellow: '#ffff00', lime: '#00ff00', cyan: '#00ffff', aqua: '#00ffff' };
+  if (kws[hex]) return hexToRgbObj(kws[hex]);
+  return null;
+}
+function parseColorToRgb(colorStr) {
+  if (!colorStr) return null;
+  colorStr = String(colorStr).trim();
+  if (colorStr === 'none' || colorStr === 'currentColor') return null;
+  let t = hexToRgbObj(colorStr);
+  if (t) return t;
+  const m = colorStr.match(/rgba?\(([^)]+)\)/);
+  if (!m) return null;
+  const parts = m[1].split(',').map(s => parseFloat(s.trim()));
+  return { r: parts[0], g: parts[1], b: parts[2], a: parts[3]!==undefined?parts[3]:1 };
+}
+function colorDistanceSq(a,b) {
+  if (!a || !b) return Infinity;
+  const dr = a.r - b.r, dg = a.g - b.g, db = a.b - b.b;
+  return dr*dr + dg*dg + db*db;
+}
+
+function backupSvgColors(svg) {
+  if (!svg) return;
+  svg.querySelectorAll('*').forEach(el => {
+    ['fill','stroke'].forEach(attr => {
+      const v = el.getAttribute(attr);
+      if (v !== null && v !== undefined) {
+        if (!el.hasAttribute(`data-orig-${attr}`)) el.setAttribute(`data-orig-${attr}`, v);
+      }
+    });
+  });
+}
+function restoreSvgColors(svg) {
+  if (!svg) return 0;
+  let restored = 0;
+  svg.querySelectorAll('*').forEach(el => {
+    ['fill','stroke'].forEach(attr => {
+      const orig = el.getAttribute(`data-orig-${attr}`);
+      if (orig !== null && orig !== undefined) {
+        el.setAttribute(attr, orig);
+        restored++;
+      }
+    });
+  });
+  return restored;
+}
+function restoreAllPagesHighlights() {
+  let total = 0;
+  document.querySelectorAll('.page').forEach(p => {
+    const svg = p.querySelector('svg');
+    if (svg) total += restoreSvgColors(svg);
+  });
+  return total;
+}
+
+// mapping: [{ src: '#ffff00' or parsed rgb obj, target: '#0000ff' }, ...]
+// tol: 最大許容色差（各チャネルの差の二乗和）
+function remapHighlightsInSvg(svg, mapping, tolSq = 2500) {
+  if (!svg) return 0;
+  let changed = 0;
+  const els = svg.querySelectorAll('*');
+  els.forEach(el => {
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'image') return;
+    ['fill','stroke'].forEach(attr => {
+      let val = el.getAttribute(attr);
+      let computed = null;
+      if (!val || val === 'inherit' || val === 'currentColor') {
+        try { computed = window.getComputedStyle(el)[attr]; } catch(e){ computed = null; }
+      }
+      const source = (val && val !== 'none') ? val : computed;
+      if (!source) return;
+      const srcRgb = parseColorToRgb(source);
+      if (!srcRgb) return;
+      for (const map of mapping) {
+        const srcTarget = (typeof map.src === 'string') ? parseColorToRgb(map.src) : map.src;
+        if (!srcTarget) continue;
+        const d = colorDistanceSq(srcRgb, srcTarget);
+        if (d <= tolSq) {
+          const tgt = parseColorToRgb(map.target) || hexToRgbObj(map.target);
+          if (!tgt) continue;
+          if (srcRgb.a !== undefined && srcRgb.a < 1) {
+            el.setAttribute(attr, `rgba(${tgt.r}, ${tgt.g}, ${tgt.b}, ${srcRgb.a})`);
+          } else {
+            el.setAttribute(attr, map.target);
+          }
+          changed++;
+          break;
+        }
+      }
+    });
+  });
+  return changed;
+}
+function remapHighlightsAllPages(mapping, tol = 30) {
+  const tolSq = Math.pow(tol,2) * 3;
+  let total = 0;
+  document.querySelectorAll('.page').forEach(p => {
+    const svg = p.querySelector('svg');
+    if (svg) total += remapHighlightsInSvg(svg, mapping, tolSq);
+  });
+  return total;
+}
+
 
   // ----------------------------
   // image processing (high quality invert)
