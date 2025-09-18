@@ -67,12 +67,12 @@
 .page {
   background: transparent;        /* 外側は透明に */
   border-radius: 8px;
-  padding: 12px;                  /* ページと周囲の余白（紙を内包） */
+  padding: 0px;                  /* ページと周囲の余白（紙を内包） */
   display: block;                 /* 重要: inline-blockだと重なりや折返しの問題が出る */
   transform-origin: 0 0;          /* default transform origin */
   overflow: visible;
   box-sizing: content-box;
-  margin: 18px 0;                 /* ページ間のスペース */
+  margin: 3px 0;                 /* ページ間のスペース */
   position: relative;             /* 重なり防止のため相対位置 */
 }
 
@@ -113,7 +113,7 @@
 
   /* textLayer overlay styling */
   .textLayer span {
-    font-family: inherit;
+    font-family: "BIZ UDゴシック", "Yu Gothic", "Meiryo", sans-serif !important;
     white-space: pre;
   }
 

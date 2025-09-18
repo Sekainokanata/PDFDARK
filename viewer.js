@@ -126,23 +126,6 @@ function _getWrapperAndPagesHolder() {
     }
   }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   // load pdf
   //const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
   //const pdf = await loadingTask.promise;
@@ -266,7 +249,7 @@ function _getWrapperAndPagesHolder() {
     pagesHolder.id = 'viewer-pages';
     pagesHolder.style.display = 'flex';
     pagesHolder.style.flexDirection = 'column';
-    pagesHolder.style.gap = '20px';
+    pagesHolder.style.gap = '3px';
     pagesHolder.style.alignItems = 'center';
 
     wrapper.appendChild(pagesHolder);
