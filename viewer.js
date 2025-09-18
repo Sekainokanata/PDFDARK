@@ -23,6 +23,19 @@ const cMapUrlForExtension = chrome.runtime.getURL('pdfjs/cmaps/');
 async function startViewer() {
   const params = new URLSearchParams(location.search);
   const file = params.get('file');
+// ファイル名だけを抽出してタブタイトルに設定
+if (file) {
+  try {
+    const urlObj = new URL(file, location.href);
+    const filename = urlObj.pathname.split('/').pop() || 'PDF';
+    document.title = decodeURIComponent(filename); // ←ここを修正
+  } catch (e) {
+    // 万一URLでなければそのまま
+    document.title = file.split('/').pop() || 'PDF';
+    document.title = decodeURIComponent(fallback); // ←ここも修正
+  }
+}
+
   const origContainer = document.getElementById('container');
   if (!file) {
     origContainer.textContent = 'No file specified.';
@@ -1276,7 +1289,6 @@ function wireDownloadButton(ui) {
 
       // use scrollToPageTopByIndex to scroll wrapper such that page top aligns with wrapper top
       // offset: you can set small offset to leave toolbar gap (e.g. 8)
-      const offset = (ui && ui.toolbar) ? ui.toolbar.clientHeight + 0 : 8;
       // behavior smooth for nice animation
       //scrollToPageTopByIndex(idx, { behavior: 'smooth', offset });
       scrollToPageTopByIndex(n, { behavior: 'smooth', extraGap: -50, waitForRender: true });
