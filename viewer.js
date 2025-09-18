@@ -3,7 +3,7 @@
 // - SVG表示（pdf.js SVGGraphics）＋スマートテキストオーバーレイ
 // - 画像の高品質反転処理
 // - コピー権限チェック（コピー禁止なら overlay を作らない + コピーブロック）
-// - 表示モードトグル（SVG優先 / オーバーレイ優先）
+// - 表示モードトグル（オリジナル / フォント調整）
 // - ズーム・Fit・ページ移動等の基本UIロジック
 //
 // 前提:
@@ -17,8 +17,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('pdfjs/pdf.worker
 
 // cMap は pdfjs/cmaps/ に置いた前提
 const cMapUrlForExtension = chrome.runtime.getURL('pdfjs/cmaps/');
-
-
 
 
 
@@ -42,8 +40,107 @@ async function startViewer() {
   }
   const arrayBuffer = await resp.arrayBuffer();
 
-  window.__viewer_pdfArrayBuffer = arrayBuffer;
-  window.__viewer_pdfUrl = file; // file は URL 残ってる前提
+  // --- add right after: const arrayBuffer = await resp.arrayBuffer(); ---
+  window.__viewer_pdfArrayBuffer = arrayBuffer; // startViewer 内で取得した PDF バイトを保存
+  window.__viewer_pdfUrl = file;               // ?file=... の URL を保存
+  // ----------------------------------------------------------------------
+
+
+// ---------- ページ上端へスクロールするユーティリティ ----------
+// place this above wireToolbarLogic() or at top-level within startViewer()
+
+function _getWrapperAndPagesHolder() {
+  const ui = window.__viewer_ui || {};
+  const wrapper = ui.wrapper || document.getElementById('viewer-container-wrapper') || document.querySelector('.viewer-wrapper') || document.body;
+  const pagesHolder = ui.pagesHolder || document.getElementById('viewer-pages') || wrapper.querySelector('.pages') || wrapper;
+  return { wrapper, pagesHolder, ui };
+}
+
+/**
+ * pageIdx: 1-based
+ * options: { behavior:'auto'|'smooth', offset: number }
+ */
+// ---------- 改良版: ページ本体(paper/svg)の上端をツールバー直下に合わせる ----------
+// pageIdx: 1-based
+// options: { behavior:'auto'|'smooth', extraGap: number, waitForRender: boolean }
+  function scrollToPageTopByIndex(pageIdx, options = {}) {
+    const { wrapper, pagesHolder, ui } = _getWrapperAndPagesHolder();
+    if (!wrapper || !pagesHolder) return;
+
+    const idx = Math.max(1, pageIdx);
+    const pages = Array.from(pagesHolder.querySelectorAll('.page'));
+    if (idx > pages.length) return;
+    const pageDiv = pages[idx - 1];
+
+    const opts = Object.assign({ behavior: 'auto', extraGap: 0, waitForRender: true }, options);
+
+    // find the "paper" or visible content inside the page.
+    // prefer .paper, then svg, then pageDiv itself
+    let contentElem = pageDiv.querySelector('.paper') || pageDiv.querySelector('svg') || pageDiv;
+
+    // helper to actually compute and scroll
+    const doScroll = () => {
+      // if wrapper is document body, use document scrolling
+      if (wrapper === document.body || wrapper === document.documentElement) {
+        const rect = contentElem.getBoundingClientRect();
+        const toolbarHeight = (ui && ui.toolbar) ? ui.toolbar.getBoundingClientRect().height : 0;
+        const targetY = window.scrollY + rect.top - toolbarHeight - opts.extraGap;
+        window.scrollTo({ top: Math.max(0, Math.round(targetY)), behavior: opts.behavior });
+        return;
+      }
+
+      const wrapperRect = wrapper.getBoundingClientRect();
+      const contentRect = contentElem.getBoundingClientRect();
+
+      // desired contentRect.top should become wrapperRect.top + toolbarHeight + extraGap
+      const toolbarHeight = (ui && ui.toolbar) ? ui.toolbar.getBoundingClientRect().height : 0;
+      const desiredTop = wrapperRect.top + toolbarHeight + opts.extraGap;
+
+      // delta = contentRect.top - wrapperRect.top
+      const delta = contentRect.top - wrapperRect.top;
+
+      // compute new scrollTop so that contentRect.top == desiredTop
+      let newScrollTop = wrapper.scrollTop + Math.round(delta) - (toolbarHeight + opts.extraGap);
+
+      // clamp
+      const maxScroll = Math.max(0, wrapper.scrollHeight - wrapper.clientHeight);
+      newScrollTop = Math.max(0, Math.min(maxScroll, newScrollTop));
+
+      if (opts.behavior === 'smooth' && typeof wrapper.scrollTo === 'function') {
+        wrapper.scrollTo({ top: newScrollTop, behavior: 'smooth' });
+      } else {
+        wrapper.scrollTop = newScrollTop;
+      }
+    };
+
+    // If we want to wait until rendering/layout settles (fonts, images, svg), do a couple of rAFs
+    if (opts.waitForRender) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          // small timeout sometimes helps if heavy render is ongoing
+          setTimeout(doScroll, 8);
+        });
+      });
+    } else {
+      doScroll();
+    }
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
   // load pdf
@@ -139,9 +236,9 @@ async function startViewer() {
     const btnDownload = document.createElement('button'); btnDownload.className = 'viewer-tool-btn'; btnDownload.textContent = '↓ Download';
     const btnPrint = document.createElement('button'); btnPrint.className = 'viewer-tool-btn'; btnPrint.textContent = 'Print';
 
-    // mode toggle (SVG優先 / オーバーレイ優先)
-    const btnSvgMode = document.createElement('button'); btnSvgMode.className = 'viewer-tool-btn'; btnSvgMode.textContent = 'SVG優先';
-    const btnOverlayMode = document.createElement('button'); btnOverlayMode.className = 'viewer-tool-btn'; btnOverlayMode.textContent = 'オーバーレイ優先';
+    // mode toggle (オリジナル / フォント調整)
+    const btnSvgMode = document.createElement('button'); btnSvgMode.className = 'viewer-tool-btn'; btnSvgMode.textContent = 'オリジナル';
+    const btnOverlayMode = document.createElement('button'); btnOverlayMode.className = 'viewer-tool-btn'; btnOverlayMode.textContent = 'フォント調整';
 
     rightGroup.appendChild(btnDownload);
     rightGroup.appendChild(btnPrint);
@@ -185,51 +282,133 @@ async function startViewer() {
       btnPrev, btnNext, pageInput, btnZoomIn, btnZoomOut, zoomVal, btnFitWidth, btnFitPage, btnDownload, btnPrint,
       btnSvgMode, btnOverlayMode
     };
+
+    // --- add right after window.__viewer_ui = { ... } inside setupShell() ---
+    try { wireDownloadButton(window.__viewer_ui); } catch (e) { console.warn('wireDownloadButton failed', e); }
+    // ---------------------------------------------------------------------------
+
+
   })();
 
   // ----------------------------
 // toolbar: add highlight buttons (貼り付け先: window.__viewer_ui = {...}; の直後)
 // ----------------------------
-function ensureHighlightButtonsExist(ui) {
-  if (!ui || !ui.toolbar) return;
-  if (!ui.btnHighlightToBlue) {
-    const b = document.createElement('button');
-    b.className = 'viewer-tool-btn';
-    b.textContent = 'ハイライト→青';
-    b.title = '黄色/黄緑/水色のハイライトを青に変換';
-    ui.toolbar.appendChild(b);
-    ui.btnHighlightToBlue = b;
-    b.addEventListener('click', () => {
-      const mapping = [
-        { src: '#ffff00', target: '#0000ff' },
-        { src: '#00ff00', target: '#0000ff' },
-        { src: '#00ffff', target: '#0000ff' }
-      ];
-      // backup originals once per page
-      document.querySelectorAll('.page').forEach(p => {
-        const svg = p.querySelector('svg');
-        if (svg) backupSvgColors(svg);
-      });
-      const changed = remapHighlightsAllPages(mapping, 30);
-      console.log('remapHighlightsAllPages changed:', changed);
-      if (changed === 0) console.log('No highlights matched — try increasing tolerance.');
+// -------------------------
+// ハイライト調整: トグル式ボタン実装
+// 置き換え／追加用（ensureHighlightButtonsExist の代わりに使って）
+// -------------------------
+
+// default mapping (黄色 / 黄緑 / 水色 -> 青)
+const HIGHLIGHT_MAPPING_DEFAULT = [
+  { src: '#ffff00', target: '#0000ff' }, // yellow
+  { src: '#00ff00', target: '#0000ff' }, // lime
+  { src: '#00ffff', target: '#0000ff' }  // cyan
+];
+
+// tolerance デフォルト
+const HIGHLIGHT_TOL_DEFAULT = 30;
+
+// global toggle state
+if (!window.__highlight_toggle_state) window.__highlight_toggle_state = { enabled: false };
+
+// apply or restore across all pages
+function applyHighlightToggle(enabled, mapping = HIGHLIGHT_MAPPING_DEFAULT, tol = HIGHLIGHT_TOL_DEFAULT) {
+  // if enabling: backup each svg and remap
+  if (enabled) {
+    document.querySelectorAll('.page').forEach(p => {
+      const svg = p.querySelector('svg');
+      if (!svg) return;
+      // backup originals (only once)
+      backupSvgColors(svg);
+      // do remap
+      remapHighlightsInSvg(svg, mapping, Math.pow(tol,2)*3);
     });
+  } else {
+    // disable: restore originals
+    restoreAllPagesHighlights();
   }
-  if (!ui.btnHighlightRestore) {
-    const r = document.createElement('button');
-    r.className = 'viewer-tool-btn';
-    r.textContent = 'ハイライト戻す';
-    r.title = 'ハイライト色を元に戻す';
-    ui.toolbar.appendChild(r);
-    ui.btnHighlightRestore = r;
-    r.addEventListener('click', () => {
-      const restored = restoreAllPagesHighlights();
-      console.log('restoreAllPagesHighlights restored:', restored);
+  window.__highlight_toggle_state.enabled = enabled;
+}
+
+// observe pages added later so toggle affects new pages too
+(function setupHighlightObserver() {
+  if (window.__highlight_observer_installed) return;
+  const pagesHolder = (window.__viewer_ui && window.__viewer_ui.pagesHolder) || document.getElementById('viewer-pages') || document.querySelector('.viewer-pages') || document.body;
+  if (!pagesHolder) return;
+  const mo = new MutationObserver(muts => {
+    muts.forEach(m => {
+      if (!window.__highlight_toggle_state.enabled) return;
+      // for added nodes, apply mapping if svg found
+      m.addedNodes && m.addedNodes.forEach(node => {
+        if (!(node instanceof HTMLElement)) return;
+        const svg = node.querySelector ? node.querySelector('svg') : null;
+        if (svg) {
+          backupSvgColors(svg);
+          remapHighlightsInSvg(svg, HIGHLIGHT_MAPPING_DEFAULT, Math.pow(HIGHLIGHT_TOL_DEFAULT,2)*3);
+        }
+      });
     });
+  });
+  mo.observe(pagesHolder, { childList: true, subtree: true });
+  window.__highlight_observer_installed = true;
+})();
+
+// create toggle button in toolbar and wire behavior
+function createOrWireHighlightToggle(ui) {
+  if (!ui) ui = window.__viewer_ui;
+  if (!ui || !ui.toolbar) return;
+
+  // if exists, just update event wiring
+  if (ui.btnHighlightToggle) {
+    ui.btnHighlightToggle.removeEventListener && ui.btnHighlightToggle.removeEventListener('click', ui.__highlight_toggle_handler);
+  } else {
+    // create button
+    const btn = document.createElement('button');
+    btn.className = 'viewer-tool-btn';
+    btn.textContent = 'ハイライト調整';
+    btn.title = 'ハイライトの色を青に変換／元に戻す（トグル）';
+    ui.toolbar.appendChild(btn);
+    ui.btnHighlightToggle = btn;
+  }
+
+  // handler
+  ui.__highlight_toggle_handler = function() {
+    const newState = !window.__highlight_toggle_state.enabled;
+    // visual: toggle active class like overlay button
+    if (newState) {
+      ui.btnHighlightToggle.classList.add('active');
+      ui.btnHighlightToggle.style.background = '#0a84ff'; // ON時
+    } else {
+      ui.btnHighlightToggle.classList.remove('active');
+      ui.btnHighlightToggle.style.background = '#222'; // OFF時
+    }
+
+    // apply or restore
+    try {
+      applyHighlightToggle(newState, HIGHLIGHT_MAPPING_DEFAULT, HIGHLIGHT_TOL_DEFAULT);
+      console.log('[HighlightToggle] newState=', newState);
+    } catch (e) {
+      console.error('Highlight toggle failed', e);
+    }
+  };
+
+  ui.btnHighlightToggle.addEventListener('click', ui.__highlight_toggle_handler);
+
+  // ensure visual initial state matches state
+  if (window.__highlight_toggle_state.enabled) {
+    ui.btnHighlightToggle.classList.add('active');
+    ui.btnHighlightToggle.style.background = '#0a84ff';
+  } else {
+    ui.btnHighlightToggle.classList.remove('active');
+    ui.btnHighlightToggle.style.background = '#222';
   }
 }
+
+// call right away if UI exists
+try { createOrWireHighlightToggle(window.__viewer_ui); } catch(e) { /* ignore until UI exists */ }
+
 // call it now if UI exists
-try { ensureHighlightButtonsExist(window.__viewer_ui); } catch(e){ /* ignore */ }
+//try { ensureHighlightButtonsExist(window.__viewer_ui); } catch(e){ /* ignore */ }
 
 
   // now alias containerRef to pagesHolder for appending pages
@@ -940,6 +1119,108 @@ function renderTextLayerFromTextContent(textContent, viewport, pageDiv, options 
   return textLayer;
 }
 
+// ===== download helpers (paste before wireToolbarLogic or at top-level) =====
+
+/** extract filename from Content-Disposition header (supports RFC5987-ish UTF-8) */
+function filenameFromContentDisposition(cd) {
+  if (!cd) return null;
+  // try filename* (UTF-8) first
+  let m = cd.match(/filename\*\s*=\s*([^;]+)/i);
+  if (m && m[1]) {
+    let val = m[1].trim();
+    // format: UTF-8''%E3%81%82.pdf  or 'some.pdf'
+    val = val.replace(/^UTF-8''/i, '').replace(/^['"]|['"]$/g, '');
+    try { return decodeURIComponent(val); } catch (e) { return val; }
+  }
+  // fallback: filename=
+  m = cd.match(/filename\s*=\s*["']?([^"';]+)["']?/i);
+  if (m && m[1]) return m[1];
+  return null;
+}
+
+/** downloadOriginalPdf(fileUrl, existingArrayBuffer)
+ *  - existingArrayBuffer があればそれを使う（推奨）
+ *  - なければ fetch(fileUrl) して取得してからダウンロード
+ */
+async function downloadOriginalPdf(fileUrl, existingArrayBuffer = null) {
+  if (!fileUrl) {
+    console.warn('No file URL to download');
+    return;
+  }
+
+  let arrayBuffer = existingArrayBuffer;
+  let filename = null;
+
+  if (!arrayBuffer) {
+    try {
+      // include credentials to handle auth-protected resources where applicable
+      const resp = await fetch(fileUrl, { credentials: 'include' });
+      if (!resp.ok) throw new Error('Fetch failed: ' + resp.status);
+      // try filename from headers
+      const cd = resp.headers.get('content-disposition');
+      filename = filenameFromContentDisposition(cd);
+      arrayBuffer = await resp.arrayBuffer();
+    } catch (err) {
+      console.error('Failed to fetch original PDF for download:', err);
+      // フォールバック: 新しいタブで開かせて保存させる
+      try {
+        window.open(fileUrl, '_blank');
+      } catch (e) {
+        alert('ダウンロードに失敗しました。外部で開いて保存してください。');
+      }
+      return;
+    }
+  }
+
+  // filename fallback: URL の最終パス
+  if (!filename) {
+    try {
+      const u = new URL(fileUrl);
+      const base = u.pathname.split('/').pop() || '';
+      filename = base || 'download.pdf';
+    } catch (e) {
+      filename = 'download.pdf';
+    }
+  }
+
+  // create blob and trigger download
+  try {
+    const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    }, 1500);
+  } catch (err) {
+    console.error('Download failed:', err);
+    alert('ダウンロード中にエラーが発生しました。コンソールを確認してください。');
+  }
+}
+
+/** wireDownloadButton(ui)
+ *  - ui.btnDownload が存在すればクリック時に downloadOriginalPdf を呼ぶ
+ *  - window.__viewer_pdfArrayBuffer / __viewer_pdfUrl を使う
+ */
+function wireDownloadButton(ui) {
+  if (!ui) ui = window.__viewer_ui;
+  if (!ui || !ui.btnDownload) return;
+  if (ui.btnDownload.__download_wired) return; // 2重配線防止
+
+  ui.btnDownload.addEventListener('click', async () => {
+    const arr = window.__viewer_pdfArrayBuffer || null;
+    const url = window.__viewer_pdfUrl || (new URLSearchParams(location.search)).get('file');
+    await downloadOriginalPdf(url, arr);
+  });
+  ui.btnDownload.__download_wired = true;
+}
+// ===== end download helpers =====
+
+
 
   // ----------------------------
   // toolbar wiring: zoom/navigation/download/print/mode
@@ -1000,14 +1281,26 @@ function renderTextLayerFromTextContent(textContent, viewport, pageDiv, options 
       applyScaleToAllPages(targetScale);
     }
 
+    // ---------- replace existing goToPage with this ----------
     function goToPage(n) {
-      const pages = Array.from(ui.pagesHolder.querySelectorAll('.page'));
+      const { pagesHolder, ui } = _getWrapperAndPagesHolder();
+      const pages = Array.from(pagesHolder.querySelectorAll('.page'));
       if (!pages.length) return;
       const idx = Math.min(Math.max(1, n), pages.length);
-      const target = pages[idx - 1];
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      ui.pageInput.value = idx;
+
+      // update input value immediately
+      if (ui && ui.pageInput) ui.pageInput.value = idx;
+
+      // use scrollToPageTopByIndex to scroll wrapper such that page top aligns with wrapper top
+      // offset: you can set small offset to leave toolbar gap (e.g. 8)
+      const offset = (ui && ui.toolbar) ? ui.toolbar.clientHeight + 0 : 8;
+      // behavior smooth for nice animation
+      //scrollToPageTopByIndex(idx, { behavior: 'smooth', offset });
+      scrollToPageTopByIndex(n, { behavior: 'smooth', extraGap: -50, waitForRender: true });
+      // focus page or do extra logic if needed (keep compatibility)
+      // existing code previously set ui.pageInput.value which we've done above
     }
+
 
     ui.btnZoomIn.addEventListener('click', () => { applyScaleToAllPages(Math.min(5, currentScale + 0.1)); });
     ui.btnZoomOut.addEventListener('click', () => { applyScaleToAllPages(Math.max(0.1, currentScale - 0.1)); });
@@ -1048,7 +1341,7 @@ function renderTextLayerFromTextContent(textContent, viewport, pageDiv, options 
       const textLayer = pageDiv.querySelector('.textLayer');
 
       if (mode === 'svg') {
-        // --- SVG優先モード ---
+        // --- オリジナルモード ---
         // 1) SVG側を選択可能に（通常の挙動）
         if (svgElem) {
           // Make svg interactive/selectable
@@ -1078,7 +1371,7 @@ function renderTextLayerFromTextContent(textContent, viewport, pageDiv, options 
           textLayer.style.userSelect = 'none';
         }
       } else {
-        // --- オーバーレイ優先モード ---
+        // --- フォント調整モード ---
         // 1) SVG側は選択不可能に（hide text elements and disable pointer/select)
         if (svgElem) {
           // hide textual SVG elements to avoid double visual/copy
