@@ -42,6 +42,10 @@ async function startViewer() {
   }
   const arrayBuffer = await resp.arrayBuffer();
 
+  window.__viewer_pdfArrayBuffer = arrayBuffer;
+  window.__viewer_pdfUrl = file; // file は URL 残ってる前提
+
+
   // load pdf
   //const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
   //const pdf = await loadingTask.promise;
