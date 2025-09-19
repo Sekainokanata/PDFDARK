@@ -42,10 +42,9 @@ window.setupShell = function setupShell(origContainer) {
   const rightGroup = document.createElement('div');
   rightGroup.className = 'viewer-toolbar-group'; rightGroup.style.marginLeft = 'auto'; rightGroup.style.display = 'flex'; rightGroup.style.gap = '6px'; rightGroup.style.alignItems = 'center';
   const btnDownload = document.createElement('button'); btnDownload.className = 'viewer-tool-btn'; btnDownload.textContent = '↓ Download';
-  const btnPrint = document.createElement('button'); btnPrint.className = 'viewer-tool-btn'; btnPrint.textContent = 'Print';
   const btnSvgMode = document.createElement('button'); btnSvgMode.className = 'viewer-tool-btn'; btnSvgMode.textContent = 'オリジナル';
   const btnOverlayMode = document.createElement('button'); btnOverlayMode.className = 'viewer-tool-btn'; btnOverlayMode.textContent = 'フォント調整';
-  rightGroup.appendChild(btnDownload); rightGroup.appendChild(btnPrint); rightGroup.appendChild(btnSvgMode); rightGroup.appendChild(btnOverlayMode);
+  rightGroup.appendChild(btnDownload); rightGroup.appendChild(btnSvgMode); rightGroup.appendChild(btnOverlayMode);
 
   toolbar.appendChild(leftGroup); toolbar.appendChild(centerGroup); toolbar.appendChild(rightGroup);
 
@@ -65,7 +64,7 @@ window.setupShell = function setupShell(origContainer) {
   window.__viewer_ui = {
     shell, toolbar, wrapper, pagesHolder,
     btnPrev, btnNext, pageInput, btnZoomIn, btnZoomOut, zoomVal, btnFitWidth, btnFitPage,
-    btnDownload, btnPrint, btnSvgMode, btnOverlayMode
+    btnDownload, btnSvgMode, btnOverlayMode
   };
 
   return window.__viewer_ui;
