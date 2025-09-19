@@ -142,6 +142,24 @@
     padding: 6px;
     border-radius: 6px;
   }
+
+  /* 現在ページ数入力の上下スピンボタンを非表示にする */
+  /* WebKit系 (Chrome/Edge/Safari) */
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  /* Firefox */
+  input[type=number] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+  /* 対象を限定したい場合は #page-input に適用 */
+  #page-input {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
   </style>
 </head>
 <body>

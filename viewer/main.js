@@ -71,6 +71,8 @@ window.startViewer = async function startViewer(){
   }
 
   const curMode = (function(){ try { return localStorage.getItem('viewerTextMode') || 'svg'; } catch(_) { return 'svg'; } })();
+  // 総ページ数をツールバーに表示（現在ページ入力の右）
+  try { if (ui && ui.pageCountDisplay) ui.pageCountDisplay.textContent = `/ ${pdf.numPages}`; } catch(_) {}
 
   for (let p = 1; p <= pdf.numPages; p++) {
     try {
