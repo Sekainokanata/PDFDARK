@@ -136,10 +136,14 @@
   <!-- 1) pdf.js 本体（UMDビルドならこれで global pdfjsLib が定義される） -->
   <script src="pdfjs/pdf.js"></script>
 
-  <!-- 2) viewer.js: startViewer() を定義 -->
-  <script src="viewer.js"></script>
+  <!-- 2) 分割した viewer スクリプト群 -->
+  <script src="viewer/scroll.js"></script>
+  <script src="viewer/ui.js"></script>
+  <script src="viewer/renderer.js"></script>
+  <script src="viewer/toolbar.js"></script>
+  <script src="viewer/main.js"></script>
 
-  <!-- 3) viewer-run.js: workerSrc 設定 & startViewer 実行 -->
+  <!-- 3) viewer-run.js: workerSrc 設定 & startViewer 実行（従来通り） -->
   <script src="viewer-run.js"></script>
 </body>
 </html>
