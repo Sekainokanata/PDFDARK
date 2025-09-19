@@ -135,10 +135,10 @@ window.startViewer = async function startViewer(){
         try { console.log('ノーマル反転対象です'); } catch(_) {}
       }
 
-      // テキストが無いページのみ、SVG全体を二値化（黒寄り→白、白寄り→黒）
+      // テキストが無いページのみ、SVGをPNGに変換
       try {
         if (!hasAnyText) {
-          window.applyBinarizeInvertToSvg(svg);
+          await window.convertSvgToPng(svg, paper);
         }
       } catch(_) {}
 

@@ -238,51 +238,225 @@ window.processSvgImagesHighQuality = async function processSvgImagesHighQuality(
   }
 };
 
-// テキストが無いページ用: SVG全体を二値化（黒寄り→白、白寄り→黒）
-// 実装: SVGフィルタを追加し、コンテンツを<g>で包んで filter=url(#...) を適用
-// しきい値は0.5相当（feComponentTransferの離散2値で実現）。
-window.__svgFilterIdSeq = window.__svgFilterIdSeq || 0;
-window.applyBinarizeInvertToSvg = function applyBinarizeInvertToSvg(svg, options = {}) {
-  if (!svg || svg.__bwInvertedApplied) return;
+// サンドボックス連携: TF.js推論は sandbox/sandbox.html 内で実行
+function __ensureSandbox() {
+  if (window.__tf_sandbox_iframe && window.__tf_sandbox_port) return { iframe: window.__tf_sandbox_iframe, port: window.__tf_sandbox_port };
+  const url = window.chrome?.runtime?.getURL ? chrome.runtime.getURL('sandbox/sandbox.html') : 'sandbox/sandbox.html';
+  const iframe = document.createElement('iframe');
+  iframe.src = url; iframe.style.display = 'none'; iframe.sandbox = 'allow-scripts';
+  document.body.appendChild(iframe);
+  window.__tf_sandbox_iframe = iframe;
+  // メッセージポートは直接 window でやり取り
+  window.__tf_sandbox_port = iframe.contentWindow;
+  return { iframe, port: window.__tf_sandbox_port };
+}
+
+async function __predictSingleBoxOnCanvas_viaSandbox(canvas) {
   try {
-    const SVG_NS = 'http://www.w3.org/2000/svg';
-    // defs を用意
-    let defs = svg.querySelector('defs');
-    if (!defs) { defs = document.createElementNS(SVG_NS, 'defs'); svg.insertBefore(defs, svg.firstChild); }
-
-    const id = 'bwInvert_' + (++window.__svgFilterIdSeq);
-    // 既存があれば再利用しない（ページ毎に固有ID）
-    const filter = document.createElementNS(SVG_NS, 'filter');
-    filter.setAttribute('id', id);
-    filter.setAttribute('color-interpolation-filters', 'sRGB');
-    // グレースケール化（相対輝度）
-    const cm = document.createElementNS(SVG_NS, 'feColorMatrix');
-    cm.setAttribute('type', 'matrix');
-    cm.setAttribute('values', '0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 1 0');
-    filter.appendChild(cm);
-    // 2値化 + 反転: 暗い(<=0.5)→1(白), 明るい(>0.5)→0(黒)
-    const ct = document.createElementNS(SVG_NS, 'feComponentTransfer');
-    ['R','G','B'].forEach(ch => {
-      const f = document.createElementNS(SVG_NS, 'feFunc' + ch);
-      f.setAttribute('type', 'discrete');
-      f.setAttribute('tableValues', '1 0');
-      ct.appendChild(f);
-    });
-    filter.appendChild(ct);
-    defs.appendChild(filter);
-
-    // 既存コンテンツを<g>に移してフィルタ適用（defsは除外）
-    const wrapper = document.createElementNS(SVG_NS, 'g');
-    wrapper.setAttribute('filter', `url(#${id})`);
-    const children = Array.from(svg.childNodes);
-    for (const node of children) {
-      if (node === defs) continue;
-      wrapper.appendChild(node);
+    const { port } = __ensureSandbox();
+    // sandboxReady を一度だけ待つ（既にロード済みならすぐ進む）
+    if (!window.__tf_sandbox_ready) {
+      window.__tf_sandbox_ready = new Promise((resolve) => {
+        const onReady = (ev) => {
+          if (!ev || !ev.data) return;
+          const expectedSource = window.__tf_sandbox_iframe?.contentWindow;
+          if (expectedSource && ev.source !== expectedSource) return;
+          if (ev.data.type === 'sandboxReady') {
+            window.removeEventListener('message', onReady);
+            resolve(true);
+          }
+        };
+        window.addEventListener('message', onReady);
+        // 3秒で諦めて続行（後続で predict のタイムアウトが効く）
+        setTimeout(() => { window.removeEventListener('message', onReady); resolve(false); }, 3000);
+      });
     }
-    svg.appendChild(wrapper);
-
-    svg.__bwInvertedApplied = true;
+    await window.__tf_sandbox_ready;
+    const modelUrl = window.chrome?.runtime?.getURL
+      ? chrome.runtime.getURL('tfjs_multi_bounding_box_model_1/model.json')
+      : 'tfjs_multi_bounding_box_model_1/model.json';
+    // キャンバスから ImageData を取得
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const payload = {
+      type: 'predict',
+      modelUrl,
+      imageData,
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height
+    };
+    const res = await new Promise((resolve, reject) => {
+      const expectedSource = window.__tf_sandbox_iframe?.contentWindow;
+      const onMsg = (ev) => {
+        if (!ev || !ev.data) return;
+        if (expectedSource && ev.source !== expectedSource) return; // 他のメッセージは無視
+        const msg = ev.data;
+        if (msg.type === 'sandboxReady') {
+          // ignore; wait for actual result
+          return;
+        }
+        if (msg.type === 'predictResult') {
+          window.removeEventListener('message', onMsg);
+          resolve(msg);
+        }
+      };
+      window.addEventListener('message', onMsg);
+      try {
+        // targetOrigin は sandbox なので 'null' オリジン、'*' を指定
+        port.postMessage(payload, '*', [imageData.data.buffer]);
+      } catch (e) {
+        window.removeEventListener('message', onMsg);
+        reject(e);
+      }
+      // 10秒タイムアウト
+      setTimeout(() => { window.removeEventListener('message', onMsg); reject(new Error('sandbox predict timeout')); }, 10000);
+    });
+    if (res && res.ok) {
+      if (res.box) {
+        return { x: res.box.x, y: res.box.y, w: res.box.w, h: res.box.h };
+      }
+      return null; // okでもボックス無し
+    } else {
+      return null;
+    }
   } catch (e) {
-    console.warn('applyBinarizeInvertToSvg failed', e);
+    console.warn('predict via sandbox failed', e);
+    return null;
+  }
+}
+
+function __invertCanvasInPlace(ctx, w, h) {
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const a = d[i + 3] / 255;
+    if (a === 0) continue;
+    let r = d[i] / a, g = d[i + 1] / a, b = d[i + 2] / a;
+    r = 255 - r; g = 255 - g; b = 255 - b;
+    d[i] = Math.round(r * a); d[i + 1] = Math.round(g * a); d[i + 2] = Math.round(b * a);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+async function __selectiveInvertOutsideBoxes(canvas, boxes /* array of {x,y,w,h} or null */) {
+  const w = canvas.width, h = canvas.height;
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  const octx = out.getContext('2d');
+  octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = 'high';
+
+  // 元画像を別キャンバスにコピー
+  const orig = document.createElement('canvas'); orig.width = w; orig.height = h;
+  const oictx = orig.getContext('2d');
+  oictx.drawImage(canvas, 0, 0);
+
+  // まず全体を反転
+  octx.drawImage(canvas, 0, 0);
+  __invertCanvasInPlace(octx, w, h);
+
+  // ボックスがあれば、その領域だけ元画像で上書き（= 反転しない領域）
+  if (Array.isArray(boxes) && boxes.length) {
+    for (const b of boxes) {
+      if (!b) continue;
+      const { x, y, w: bw, h: bh } = b;
+      if (bw <= 0 || bh <= 0) continue;
+      octx.save();
+      octx.beginPath();
+      octx.rect(x, y, bw, bh);
+      octx.clip();
+      octx.drawImage(orig, 0, 0);
+      octx.restore();
+    }
+  }
+  return out;
+}
+
+// テキストが無いページ用: SVGをPNGに変換して置き換え（モデルがあればボックス外のみ反転）
+window.convertSvgToPng = async function convertSvgToPng(svg, paper) {
+  if (!svg || !paper || svg.__pngConverted) return;
+  try {
+    // SVGのサイズ
+    const svgRect = svg.getBoundingClientRect();
+    const width = Math.max(1, parseInt(svg.getAttribute('width') || svgRect.width || 800));
+    const height = Math.max(1, parseInt(svg.getAttribute('height') || svgRect.height || 600));
+
+    // SVGをシリアライズ
+    const serializer = new XMLSerializer();
+    const svgString = serializer.serializeToString(svg);
+    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const svgUrl = URL.createObjectURL(svgBlob);
+
+    // 画像として読み込み
+    const img = new Image();
+    img.width = width; img.height = height;
+
+    const pngBlob = await new Promise((resolve, reject) => {
+      img.onload = async () => {
+        try {
+          // SVG→Canvas 描画（白背景）
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // サンドボックス推論（失敗したら反転なし）
+          let processedCanvas;
+          try {
+            let boxes = [];
+            const box = await __predictSingleBoxOnCanvas_viaSandbox(canvas);
+            if (box) boxes.push(box);
+            processedCanvas = await __selectiveInvertOutsideBoxes(canvas, boxes);
+          } catch (e) {
+            console.warn('sandbox selective invert failed, fallback to no-invert', e);
+            processedCanvas = canvas; // 反転なし
+          }
+
+          processedCanvas.toBlob((blob) => {
+            if (!blob) return reject(new Error('Canvas toBlob failed'));
+            resolve(blob);
+          }, 'image/png');
+        } catch (err) {
+          reject(err);
+        } finally {
+          URL.revokeObjectURL(svgUrl);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(svgUrl);
+        reject(new Error('Failed to load SVG as image'));
+      };
+      img.src = svgUrl;
+    });
+
+    // PNG Blob → ObjectURL
+    const pngUrl = URL.createObjectURL(pngBlob);
+
+    // SVGラッパーを生成して <image> でPNGを埋め込む（= PNGを再度SVGとして表示）
+    const newSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    newSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    newSvg.setAttribute('width', String(width));
+    newSvg.setAttribute('height', String(height));
+    newSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    newSvg.style.display = 'block';
+    const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+    image.setAttributeNS('http://www.w3.org/1999/xlink', 'href', pngUrl);
+    image.setAttribute('href', pngUrl);
+    image.setAttribute('x', '0'); image.setAttribute('y', '0');
+    image.setAttribute('width', String(width)); image.setAttribute('height', String(height));
+    newSvg.appendChild(image);
+
+    // 置き換え
+    paper.replaceChild(newSvg, svg);
+
+    // URLの管理（後で解放する場合に備え保持）
+    try {
+      window.objectUrlMap = window.objectUrlMap || new Map();
+      window.objectUrlMap.set(image, { url: pngUrl, revokeOnNext: true });
+    } catch(_) {}
+
+    newSvg.__pngConverted = true;
+  } catch (e) {
+    console.warn('convertSvgToPng failed', e);
   }
 };

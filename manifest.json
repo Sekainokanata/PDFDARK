@@ -14,14 +14,28 @@
   "icons": {
     "48": "icon48.png"
   },
+  "sandbox": {
+    "pages": [
+      "sandbox/sandbox.html"
+    ]
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';",
+    "sandbox": "sandbox allow-scripts; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval';"
+  },
   "web_accessible_resources": [
-  {
-    "resources": [
-      "pdfjs/pdf.worker.js",
-      "pdfjs/cmaps/*"
-    ],
-    "matches": ["<all_urls>"]
-  }
-]
-
+    {
+      "resources": [
+        "pdfjs/pdf.worker.js",
+        "pdfjs/cmaps/*",
+        "tfjs/tf.min.js",
+        "vendor/tf.min.js",
+        "sandbox/sandbox.html",
+        "sandbox/sandbox.js",
+        "tfjs_multi_bounding_box_model_1/model.json",
+        "tfjs_multi_bounding_box_model_1/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
