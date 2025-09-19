@@ -87,7 +87,18 @@ window.startViewer = async function startViewer(){
       pageDiv.style.width = viewport.width + 'px';
       pageDiv.style.height = viewport.height + 'px';
       pageDiv.style.transformOrigin = '0 0'; pageDiv.style.overflow = 'visible'; pageDiv.style.display = 'block'; pageDiv.style.position = 'relative';
-      const paper = document.createElement('div'); paper.className = 'paper'; paper.style.width = viewport.width + 'px'; paper.style.height = viewport.height + 'px'; paper.style.transformOrigin = '0 0';
+      const paper = document.createElement('div');
+      paper.className = 'paper';
+      paper.style.width = viewport.width + 'px';
+      paper.style.height = viewport.height + 'px';
+      paper.style.transformOrigin = '0 0';
+      // 最適化B: SVG の幅/高さはここで一度だけ設定
+      try {
+        svg.style.width = viewport.width + 'px';
+        svg.style.height = viewport.height + 'px';
+        svg.setAttribute('width', viewport.width);
+        svg.setAttribute('height', viewport.height);
+      } catch(_) {}
       paper.appendChild(svg);
       pageDiv.appendChild(paper);
       const footer = document.createElement('div'); footer.className = 'page-footer'; footer.textContent = `Page ${p} / ${pdf.numPages}`; pageDiv.appendChild(footer);

@@ -39,8 +39,15 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     pages.forEach(pageDiv => {
       const baseW = parseFloat(pageDiv.getAttribute('data-base-width') || pageDiv.style.width || pageDiv.clientWidth) || 0;
       const baseH = parseFloat(pageDiv.getAttribute('data-base-height') || pageDiv.style.height || pageDiv.clientHeight) || 0;
-      pageDiv.style.width = (baseW * scale) + 'px'; pageDiv.style.height = (baseH * scale) + 'px';
-      const paper = pageDiv.querySelector('.paper'); if (paper) { paper.style.transform = `scale(${scale})`; paper.style.transformOrigin = '0 0'; const svg = paper.querySelector('svg'); if (svg) { svg.style.width = baseW + 'px'; svg.style.height = baseH + 'px'; svg.setAttribute('width', baseW); svg.setAttribute('height', baseH); } }
+      // ページの外枠サイズを更新
+      pageDiv.style.width = (baseW * scale) + 'px';
+      pageDiv.style.height = (baseH * scale) + 'px';
+      // 紙は transform のみ変更（SVG の幅/高さは初期化時に固定）
+      const paper = pageDiv.querySelector('.paper');
+      if (paper) {
+        paper.style.transform = `scale(${scale})`;
+        paper.style.transformOrigin = '0 0';
+      }
     });
     currentScale = scale; ui.zoomVal.value = Math.round(scale * 100) + '%';
   }
