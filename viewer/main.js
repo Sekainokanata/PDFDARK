@@ -106,15 +106,39 @@ window.startViewer = async function startViewer(){
 
       window.invertSvgColorsSmart(svg, { satThreshold: 0.15 });
 
-      let textContent = null; try { textContent = await page.getTextContent(); } catch(e){ console.warn('getTextContent failed for page', p, e); }
-      function looksGoodTextContent(tc){ if (!tc || !tc.items || tc.items.length === 0) return false; const sample = tc.items.slice(0, 20).map(i => i.str).join(''); return /[0-9A-Za-z\u3000-\u30FF\u4E00-\u9FFF]/.test(sample); }
-      if (allowCopy && looksGoodTextContent(textContent)) {
+  let textContent = null; try { textContent = await page.getTextContent(); } catch(e){ console.warn('getTextContent failed for page', p, e); }
+  function looksGoodTextContent(tc){ if (!tc || !tc.items || tc.items.length === 0) return false; const sample = tc.items.slice(0, 20).map(i => i.str).join(''); return /[0-9A-Za-z\u3000-\u30FF\u4E00-\u9FFF]/.test(sample); }
+  // テキスト存在判定（権限に依存しない）
+  // SVG内のtext/tspanのうち、空白以外の文字があるかを確認
+  const svgTextElems = svg.querySelectorAll('text, tspan');
+  let svgHasNonEmptyText = false;
+  for (const n of svgTextElems) {
+    const txt = (n.textContent || '').replace(/\s+/g, '');
+    if (txt.length > 0) { svgHasNonEmptyText = true; break; }
+  }
+  // tspanが存在しても全て空なら「テキスト無し」扱い
+  const svgTspanAllEmpty = (svg.querySelectorAll('tspan').length > 0) && !svgHasNonEmptyText;
+  let hasAnyText = !!(textContent && Array.isArray(textContent.items) && textContent.items.length > 0) || svgHasNonEmptyText;
+  if (svgTspanAllEmpty) { hasAnyText = false; }
+  const hasText = allowCopy && looksGoodTextContent(textContent);
+      if (hasText) {
         const wantForceVisible = (curMode === 'overlay');
         window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: '#fff' });
         if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
       }
 
-      await window.processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
+      // 画像のみのページ以外に限り、画像のスマート反転を適用
+      if (hasAnyText) {
+        await window.processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
+        try { console.log('ノーマル反転対象です'); } catch(_) {}
+      }
+
+      // テキストが無いページのみ、SVG全体を二値化（黒寄り→白、白寄り→黒）
+      try {
+        if (!hasAnyText) {
+          window.applyBinarizeInvertToSvg(svg);
+        }
+      } catch(_) {}
 
     } catch(err){ console.error('Error rendering page', p, err); const errDiv = document.createElement('div'); errDiv.textContent = `Error rendering page ${p}: ${err.message || err}`; container.appendChild(errDiv); }
   }

@@ -237,3 +237,52 @@ window.processSvgImagesHighQuality = async function processSvgImagesHighQuality(
     } catch(err){ console.warn('processSvgImagesHighQuality error', err); continue; }
   }
 };
+
+// テキストが無いページ用: SVG全体を二値化（黒寄り→白、白寄り→黒）
+// 実装: SVGフィルタを追加し、コンテンツを<g>で包んで filter=url(#...) を適用
+// しきい値は0.5相当（feComponentTransferの離散2値で実現）。
+window.__svgFilterIdSeq = window.__svgFilterIdSeq || 0;
+window.applyBinarizeInvertToSvg = function applyBinarizeInvertToSvg(svg, options = {}) {
+  if (!svg || svg.__bwInvertedApplied) return;
+  try {
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    // defs を用意
+    let defs = svg.querySelector('defs');
+    if (!defs) { defs = document.createElementNS(SVG_NS, 'defs'); svg.insertBefore(defs, svg.firstChild); }
+
+    const id = 'bwInvert_' + (++window.__svgFilterIdSeq);
+    // 既存があれば再利用しない（ページ毎に固有ID）
+    const filter = document.createElementNS(SVG_NS, 'filter');
+    filter.setAttribute('id', id);
+    filter.setAttribute('color-interpolation-filters', 'sRGB');
+    // グレースケール化（相対輝度）
+    const cm = document.createElementNS(SVG_NS, 'feColorMatrix');
+    cm.setAttribute('type', 'matrix');
+    cm.setAttribute('values', '0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 1 0');
+    filter.appendChild(cm);
+    // 2値化 + 反転: 暗い(<=0.5)→1(白), 明るい(>0.5)→0(黒)
+    const ct = document.createElementNS(SVG_NS, 'feComponentTransfer');
+    ['R','G','B'].forEach(ch => {
+      const f = document.createElementNS(SVG_NS, 'feFunc' + ch);
+      f.setAttribute('type', 'discrete');
+      f.setAttribute('tableValues', '1 0');
+      ct.appendChild(f);
+    });
+    filter.appendChild(ct);
+    defs.appendChild(filter);
+
+    // 既存コンテンツを<g>に移してフィルタ適用（defsは除外）
+    const wrapper = document.createElementNS(SVG_NS, 'g');
+    wrapper.setAttribute('filter', `url(#${id})`);
+    const children = Array.from(svg.childNodes);
+    for (const node of children) {
+      if (node === defs) continue;
+      wrapper.appendChild(node);
+    }
+    svg.appendChild(wrapper);
+
+    svg.__bwInvertedApplied = true;
+  } catch (e) {
+    console.warn('applyBinarizeInvertToSvg failed', e);
+  }
+};
