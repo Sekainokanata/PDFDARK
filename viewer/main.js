@@ -29,6 +29,26 @@ window.startViewer = async function startViewer(){
 
   // ツールバー配線（ボタンやモード等）を先に行ってユーティリティ関数を提供
   window.wireToolbarLogic(file);
+  // Ctrl+ホイールでブラウザズームではなく内部ズームに割り当て
+  try {
+    const onWheel = (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        let current = 1.0;
+        try { const txt = (ui.zoomVal.value || '100%').toString().replace('%',''); const v = parseFloat(txt); if (isFinite(v) && v>0) current = v/100; } catch(_) {}
+
+        const K = 0.008; // 感度係数（小さく→低感度/大きく→高感度）
+        const factor = Math.exp(-e.deltaY * K);
+        const next = Math.min(5, Math.max(0.1, current * factor));
+
+        if (typeof window.__viewer_applyScaleToAllPages === 'function') {
+          window.__viewer_applyScaleToAllPages(next);
+        }
+      }
+    };
+    // wrapper にだけ適用（ページ全体にはかけない）
+    ui.wrapper.addEventListener('wheel', onWheel, { passive: false });
+  } catch(_) {}
 
   // ハイライトトグルボタン追加 + 監視
   try { window.ensureHighlightToggle(ui); } catch(_) {}

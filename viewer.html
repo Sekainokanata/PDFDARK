@@ -2,9 +2,18 @@
 <html>
 <head>
   <meta charset="utf-8" />
+  <!-- モバイル等でのページズームを抑止し、内部ズームに一本化 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>シロクロクローバ</title>
   <!--<link rel="stylesheet" href="viewer.css">-->
   <style>
+  /* ページ全体のスクロールを無効化（ビュワー側のみスクロール） */
+  html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+
   /* Chrome-like viewer styles */
   #viewer-shell {
     display: flex;
@@ -24,6 +33,10 @@
     background: linear-gradient(#1f1f1f, #161616);
     border-bottom: 1px solid rgba(255,255,255,0.04);
     box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset;
+    /* 常に上部に固定（wrapperがスクロールしても可視） */
+    position: sticky;
+    top: 0;
+    z-index: 1000;
   }
 
   .viewer-toolbar-group {
@@ -51,6 +64,8 @@
     justify-content: center;
     align-items: flex-start;
     padding: 20px;
+    /* タッチ端末でのピンチズーム抑止、縦スクロールのみ許可 */
+    touch-action: pan-y;
   }
 
   /* the page stack area */
