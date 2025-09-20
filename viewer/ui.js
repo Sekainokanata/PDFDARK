@@ -25,14 +25,8 @@ window.setupShell = function setupShell(origContainer) {
   leftGroup.style.display = 'flex'; leftGroup.style.gap = '6px'; leftGroup.style.alignItems = 'center';
   const btnPrev = document.createElement('button'); btnPrev.className = 'viewer-tool-btn'; btnPrev.textContent = '◀';
   const pageInput = document.createElement('input'); pageInput.type = 'number'; pageInput.min = 1; pageInput.value = 1; pageInput.style.width = '64px'; pageInput.className = 'viewer-tool-btn';
-  const pageCountDisplay = document.createElement('div');
-  pageCountDisplay.id = 'page-count-display';
-  pageCountDisplay.style.minWidth = '48px';
-  pageCountDisplay.style.textAlign = 'left';
-  pageCountDisplay.style.paddingTop = '2px';
-  pageCountDisplay.style.paddingBottom = '2px';
   const btnNext = document.createElement('button'); btnNext.className = 'viewer-tool-btn'; btnNext.textContent = '▶';
-  leftGroup.appendChild(btnPrev); leftGroup.appendChild(pageInput); leftGroup.appendChild(pageCountDisplay); leftGroup.appendChild(btnNext);
+  leftGroup.appendChild(btnPrev); leftGroup.appendChild(pageInput); leftGroup.appendChild(btnNext);
 
   // center group
   const centerGroup = document.createElement('div');
@@ -69,7 +63,7 @@ window.setupShell = function setupShell(origContainer) {
 
   window.__viewer_ui = {
     shell, toolbar, wrapper, pagesHolder,
-    btnPrev, btnNext, pageInput, pageCountDisplay, btnZoomIn, btnZoomOut, zoomVal, btnFitWidth, btnFitPage,
+    btnPrev, btnNext, pageInput, btnZoomIn, btnZoomOut, zoomVal, btnFitWidth, btnFitPage,
     btnDownload, btnSvgMode, btnOverlayMode
   };
 

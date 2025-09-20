@@ -178,10 +178,12 @@ window.setupHighlightObserver = function setupHighlightObserver(){
 
 // テキストレイヤ（paper内に配置）
 window.renderTextLayerFromTextContent = function renderTextLayerFromTextContent(textContent, viewport, pageDiv, options = {}) {
-  options = Object.assign({ forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#fff', zIndex: 3000 }, options);
+  options = Object.assign({ forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#fff', zIndex: 3000, allowCopy: false }, options);
   const paper = pageDiv.querySelector('.paper') || pageDiv; if (getComputedStyle(paper).position === 'static') paper.style.position = 'relative';
+  // 既存の textLayer があれば除去（重複生成を防止）
+  try { const existing = paper.querySelector('.textLayer'); if (existing) existing.remove(); } catch(_) {}
   const textLayer = document.createElement('div'); textLayer.className = 'textLayer';
-  Object.assign(textLayer.style, { position: 'absolute', left: '0', top: '0', width: paper.style.width || pageDiv.style.width || (pageDiv.getAttribute('data-base-width') + 'px'), height: paper.style.height || pageDiv.style.height || (pageDiv.getAttribute('data-base-height') + 'px'), pointerEvents: 'auto', overflow: 'visible', zIndex: String(options.zIndex), background: 'transparent', mixBlendMode: 'normal', transformOrigin: '0 0' });
+  Object.assign(textLayer.style, { position: 'absolute', left: '0', top: '0', width: paper.style.width || pageDiv.style.width || (pageDiv.getAttribute('data-base-width') + 'px'), height: paper.style.height || pageDiv.style.height || (pageDiv.getAttribute('data-base-height') + 'px'), pointerEvents: options.allowCopy ? 'auto' : 'none', overflow: 'visible', zIndex: String(options.zIndex), background: 'transparent', mixBlendMode: 'normal', transformOrigin: '0 0' });
   paper.appendChild(textLayer);
 
   function multiplyTransform(a,b){ return [ a[0]*b[0] + a[1]*b[2], a[0]*b[1] + a[1]*b[3], a[2]*b[0] + a[3]*b[2], a[2]*b[1] + a[3]*b[3], a[4]*b[0] + a[5]*b[2] + b[4], a[4]*b[1] + a[5]*b[3] + b[5] ]; }
@@ -190,7 +192,7 @@ window.renderTextLayerFromTextContent = function renderTextLayerFromTextContent(
     let tx; try { if (window.pdfjsLib && pdfjsLib.Util && typeof pdfjsLib.Util.transform === 'function') tx = pdfjsLib.Util.transform(viewport.transform, item.transform); else tx = multiplyTransform(vtm, item.transform || [1,0,0,1,0,0]); } catch(e) { tx = multiplyTransform(vtm, item.transform || [1,0,0,1,0,0]); }
     const left = tx[4]; const top = tx[5]; const fontHeight = Math.hypot(tx[1], tx[3]) || (item.height || 12);
     const span = document.createElement('span'); span.textContent = item.str;
-    Object.assign(span.style, { position: 'absolute', left: `${left}px`, top: `${top - fontHeight}px`, fontSize: `${fontHeight}px`, whiteSpace: 'pre', lineHeight: '1', transformOrigin: '0 0', pointerEvents: 'none', userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', color: options.color, WebkitTextFillColor: options.color });
+    Object.assign(span.style, { position: 'absolute', left: `${left}px`, top: `${top - fontHeight}px`, fontSize: `${fontHeight}px`, whiteSpace: 'pre', lineHeight: '1', transformOrigin: '0 0', pointerEvents: options.allowCopy ? 'auto' : 'none', userSelect: options.allowCopy ? 'text' : 'none', WebkitUserSelect: options.allowCopy ? 'text' : 'none', MozUserSelect: options.allowCopy ? 'text' : 'none', msUserSelect: options.allowCopy ? 'text' : 'none', color: options.color, WebkitTextFillColor: options.color });
     textLayer.appendChild(span);
   });
 
@@ -198,8 +200,15 @@ window.renderTextLayerFromTextContent = function renderTextLayerFromTextContent(
   const hasSvgText = !!svgElem && !!svgElem.querySelector('text, tspan');
   const shouldBeVisible = options.forceVisible || (!hasSvgText) || !options.makeTransparentIfSvgTextExists;
   textLayer.querySelectorAll('span').forEach(s => {
-    if (shouldBeVisible) { s.style.color = options.color; s.style.WebkitTextFillColor = options.color; }
-    else { s.style.color = 'transparent'; s.style.WebkitTextFillColor = 'transparent'; s.style.pointerEvents = 'auto'; }
+    if (shouldBeVisible) {
+      s.style.color = options.color; s.style.WebkitTextFillColor = options.color;
+      if (options.allowCopy) { s.style.pointerEvents = 'auto'; s.style.userSelect = 'text'; s.style.WebkitUserSelect = 'text'; s.style.MozUserSelect = 'text'; s.style.msUserSelect = 'text'; }
+      else { s.style.pointerEvents = 'none'; s.style.userSelect = 'none'; s.style.WebkitUserSelect = 'none'; s.style.MozUserSelect = 'none'; s.style.msUserSelect = 'none'; }
+    } else {
+      s.style.color = 'transparent'; s.style.WebkitTextFillColor = 'transparent';
+      if (options.allowCopy) { s.style.pointerEvents = 'auto'; s.style.userSelect = 'text'; s.style.WebkitUserSelect = 'text'; s.style.MozUserSelect = 'text'; s.style.msUserSelect = 'text'; }
+      else { s.style.pointerEvents = 'none'; s.style.userSelect = 'none'; s.style.WebkitUserSelect = 'none'; s.style.MozUserSelect = 'none'; s.style.msUserSelect = 'none'; }
+    }
   });
   return textLayer;
 };
@@ -207,6 +216,10 @@ window.renderTextLayerFromTextContent = function renderTextLayerFromTextContent(
 // 画像反転（高品質）
 window.objectUrlMap = window.objectUrlMap || new Map();
 window.processSvgImagesHighQuality = async function processSvgImagesHighQuality(svgRoot, options = {}) {
+  // 防御的: 呼び出し側の不備やレースを考慮し、未定義なら何もしない
+  if (!svgRoot) return;
+  // 稀に内部で `svg` を参照するコード断片が混入しても落ちないように別名を用意
+  const svg = svgRoot;
   const objectUrlMap = window.objectUrlMap;
   const sampleMax = options.sampleMax ?? 200; const photoThresh = { avgSat: options.photoAvgSat ?? 0.05, colorStd: options.photoColorStd ?? 5, entropy: options.photoEntropy ?? 4.0, edgeDensity: options.photoEdgeDensity ?? 0.06 };
   const images = Array.from(svgRoot.querySelectorAll('image'));
@@ -238,51 +251,127 @@ window.processSvgImagesHighQuality = async function processSvgImagesHighQuality(
   }
 };
 
-// テキストが無いページ用: SVG全体を二値化（黒寄り→白、白寄り→黒）
-// 実装: SVGフィルタを追加し、コンテンツを<g>で包んで filter=url(#...) を適用
-// しきい値は0.5相当（feComponentTransferの離散2値で実現）。
-window.__svgFilterIdSeq = window.__svgFilterIdSeq || 0;
-window.applyBinarizeInvertToSvg = function applyBinarizeInvertToSvg(svg, options = {}) {
-  if (!svg || svg.__bwInvertedApplied) return;
-  try {
-    const SVG_NS = 'http://www.w3.org/2000/svg';
-    // defs を用意
-    let defs = svg.querySelector('defs');
-    if (!defs) { defs = document.createElementNS(SVG_NS, 'defs'); svg.insertBefore(defs, svg.firstChild); }
+// ===============================
+// PNG 経路（テキストなしページ）: PDF → Canvas → ML(サンドボックス) → 反転除外 → Canvas を paper に配置
+// ===============================
 
-    const id = 'bwInvert_' + (++window.__svgFilterIdSeq);
-    // 既存があれば再利用しない（ページ毎に固有ID）
-    const filter = document.createElementNS(SVG_NS, 'filter');
-    filter.setAttribute('id', id);
-    filter.setAttribute('color-interpolation-filters', 'sRGB');
-    // グレースケール化（相対輝度）
-    const cm = document.createElementNS(SVG_NS, 'feColorMatrix');
-    cm.setAttribute('type', 'matrix');
-    cm.setAttribute('values', '0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 1 0');
-    filter.appendChild(cm);
-    // 2値化 + 反転: 暗い(<=0.5)→1(白), 明るい(>0.5)→0(黒)
-    const ct = document.createElementNS(SVG_NS, 'feComponentTransfer');
-    ['R','G','B'].forEach(ch => {
-      const f = document.createElementNS(SVG_NS, 'feFunc' + ch);
-      f.setAttribute('type', 'discrete');
-      f.setAttribute('tableValues', '1 0');
-      ct.appendChild(f);
-    });
-    filter.appendChild(ct);
-    defs.appendChild(filter);
+// サンドボックスの用意（単一 iframe を使いまわし）
+window.__ensureMlSandboxReady = async function __ensureMlSandboxReady(){
+  if (window.__mlSandbox && window.__mlSandbox.ready) return window.__mlSandbox;
+  const sb = window.__mlSandbox || (window.__mlSandbox = { ready: false, queue: Promise.resolve() });
+  if (sb.readyPromise) return sb.readyPromise;
 
-    // 既存コンテンツを<g>に移してフィルタ適用（defsは除外）
-    const wrapper = document.createElementNS(SVG_NS, 'g');
-    wrapper.setAttribute('filter', `url(#${id})`);
-    const children = Array.from(svg.childNodes);
-    for (const node of children) {
-      if (node === defs) continue;
-      wrapper.appendChild(node);
+  sb.readyPromise = new Promise((resolve) => {
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.width = '0'; iframe.height = '0';
+    // 拡張内のサンドボックスHTML
+    const src = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL)
+      ? chrome.runtime.getURL('sandbox/sandbox.html')
+      : 'sandbox/sandbox.html';
+    iframe.src = src;
+    document.body.appendChild(iframe);
+
+    function onMsg(ev){
+      try {
+        if (ev.source === iframe.contentWindow && ev.data && ev.data.type === 'sandboxReady'){
+          window.removeEventListener('message', onMsg);
+          sb.iframe = iframe;
+          sb.win = iframe.contentWindow;
+          sb.ready = true;
+          sb.queue = Promise.resolve();
+          resolve(sb);
+        }
+      } catch(_) {}
     }
-    svg.appendChild(wrapper);
+    window.addEventListener('message', onMsg);
+  });
+  return sb.readyPromise;
+};
 
-    svg.__bwInvertedApplied = true;
+// サンドボックスでの推論を直列実行（reqId 不使用のため直列化で競合回避）
+window.__predictInSandbox = async function __predictInSandbox(imageData, width, height){
+  const sb = await window.__ensureMlSandboxReady();
+  // 実行を直列化
+  const run = () => new Promise((resolve) => {
+    const onMsg = (ev) => {
+      try {
+        if (ev.source === sb.win && ev.data && ev.data.type === 'predictResult'){
+          window.removeEventListener('message', onMsg);
+          resolve(ev.data);
+        }
+      } catch(_) {}
+    };
+    window.addEventListener('message', onMsg);
+    const modelUrl = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL)
+      ? chrome.runtime.getURL('tfjs_multi_bounding_box_model_1/model.json')
+      : 'tfjs_multi_bounding_box_model_1/model.json';
+    try {
+      sb.win.postMessage({ type: 'predict', modelUrl, imageData, canvasWidth: width, canvasHeight: height }, '*', [imageData.data.buffer]);
+    } catch (e) {
+      // 転送に失敗した場合はコピーで再送（transferables 非対応環境）
+      const clone = new ImageData(new Uint8ClampedArray(imageData.data), imageData.width, imageData.height);
+      try { sb.win.postMessage({ type: 'predict', modelUrl, imageData: clone, canvasWidth: width, canvasHeight: height }, '*'); }
+      catch(_) { window.removeEventListener('message', onMsg); resolve({ ok:false, error: 'postMessage failed' }); }
+    }
+  });
+  sb.queue = sb.queue.then(() => run());
+  return sb.queue;
+};
+
+// PDF.js ページを Canvas に描画して ML 反転（ボックス外）を適用し、paper に配置
+window.convertPageToPng = async function convertPageToPng(page, viewport, paper){
+  // Canvas 準備（整数サイズ推奨）
+  const w = Math.max(1, Math.round(viewport.width));
+  const h = Math.max(1, Math.round(viewport.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+
+  // PDF 描画
+  try {
+    const renderTask = page.render({ canvasContext: ctx, viewport });
+    await renderTask.promise;
   } catch (e) {
-    console.warn('applyBinarizeInvertToSvg failed', e);
+    console.warn('page.render to canvas failed; fallback to plain invert', e);
   }
+
+  // ImageData 取得
+  let imgData;
+  try {
+    imgData = ctx.getImageData(0, 0, w, h);
+  } catch (e) {
+    console.warn('getImageData failed; fallback to CSS invert', e);
+    // 画像としてそのまま配置して CSS invert で代替
+    canvas.style.filter = 'invert(1)';
+    paper.appendChild(canvas);
+    return canvas;
+  }
+
+  // サンドボックスで推論（ボックス外のみ反転）
+  let result;
+  try {
+    result = await window.__predictInSandbox(imgData, w, h);
+  } catch (e) {
+    console.warn('sandbox predict failed; fallback to full invert', e);
+    result = { ok: false };
+  }
+
+  if (result && result.ok && result.imageData) {
+    try { ctx.putImageData(result.imageData, 0, 0); }
+    catch (e) { console.warn('putImageData failed; using fallback invert', e); canvas.style.filter = 'invert(1)'; }
+  } else {
+    // フォールバック: その場で全反転（アルファ保持）
+    try {
+      const d = imgData.data;
+      for (let i=0;i<d.length;i+=4){ const a=d[i+3]/255; if(a===0) continue; let r=d[i]/a,g=d[i+1]/a,b=d[i+2]/a; r=255-r; g=255-g; b=255-b; d[i]=Math.round(r*a); d[i+1]=Math.round(g*a); d[i+2]=Math.round(b*a); }
+      ctx.putImageData(imgData, 0, 0);
+    } catch(e){ canvas.style.filter = 'invert(1)'; }
+  }
+
+  paper.appendChild(canvas);
+  try { console.log('ML反転(ボックス外)を適用しました'); } catch(_) {}
+  return canvas;
 };
