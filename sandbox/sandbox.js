@@ -61,20 +61,34 @@
   }
 
   // Convert an ImageData (Uint8ClampedArray) to tensor input [1,224,224,3]
+  // Pipeline parity:
+  //  1) resize to (IMG_SIZE, IMG_SIZE)
+  //  2) convert to RGB (drop alpha), to numpy-like array and normalize by 255.0
+  //  3) expand dims -> (1, IMG_SIZE, IMG_SIZE, 3)
   function imageDataToInput(imgData) {
     const { data, width, height } = imgData;
-    // Resize via Canvas since tf.image.resizeBilinear exists but we don't want heavy ops here.
+    const IMG_SIZE = 224;
+    // Draw source ImageData onto an offscreen canvas
     const off = (typeof OffscreenCanvas !== 'undefined') ? new OffscreenCanvas(width, height) : document.createElement('canvas');
     off.width = width; off.height = height;
     const ictx = off.getContext('2d');
     const tmp = new ImageData(new Uint8ClampedArray(data), width, height);
     ictx.putImageData(tmp, 0, 0);
-  const target = (typeof OffscreenCanvas !== 'undefined') ? new OffscreenCanvas(224, 224) : document.createElement('canvas');
-  target.width = 224; target.height = 224;
-  const tctx = target.getContext('2d');
-    tctx.drawImage(off, 0, 0, 224, 224);
-    const resized = tctx.getImageData(0, 0, 224, 224);
-    const arr = new Float32Array(224 * 224 * 3);
+
+    // Resize to IMG_SIZE x IMG_SIZE with smoothing, on white background
+    const target = (typeof OffscreenCanvas !== 'undefined') ? new OffscreenCanvas(IMG_SIZE, IMG_SIZE) : document.createElement('canvas');
+    target.width = IMG_SIZE; target.height = IMG_SIZE;
+    const tctx = target.getContext('2d');
+    tctx.imageSmoothingEnabled = true; tctx.imageSmoothingQuality = 'high';
+    // Fill white background to emulate RGB conversion behavior
+    tctx.save();
+    tctx.fillStyle = '#ffffff';
+    tctx.fillRect(0, 0, IMG_SIZE, IMG_SIZE);
+    tctx.drawImage(off, 0, 0, IMG_SIZE, IMG_SIZE);
+    tctx.restore();
+
+    const resized = tctx.getImageData(0, 0, IMG_SIZE, IMG_SIZE);
+    const arr = new Float32Array(IMG_SIZE * IMG_SIZE * 3);
     let j = 0;
     for (let i = 0; i < resized.data.length; i += 4) {
       const r = resized.data[i] / 255;
@@ -82,27 +96,25 @@
       const b = resized.data[i+2] / 255;
       arr[j++] = r; arr[j++] = g; arr[j++] = b;
     }
-    const x = tf.tensor4d(arr, [1,224,224,3]);
+    const x = tf.tensor4d(arr, [1, IMG_SIZE, IMG_SIZE, 3]);
     return x;
   }
-
-  function normBoxToPixels(box, w, h) {
-    // box: [x, y, w, h] normalized (0..1)
-    let [x, y, bw, bh] = box;
-    x = Math.max(0, Math.min(1, x));
-    y = Math.max(0, Math.min(1, y));
-    bw = Math.max(0, Math.min(1, bw));
-    bh = Math.max(0, Math.min(1, bh));
-    let px = Math.round(x * w);
-    let py = Math.round(y * h);
-    let pw = Math.round(bw * w);
-    let ph = Math.round(bh * h);
-    if (pw <= 0 || ph <= 0) return null;
-    // clamp
-    if (px + pw > w) pw = w - px;
-    if (py + ph > h) ph = h - py;
-    if (pw <= 0 || ph <= 0) return null;
-    return {x:px, y:py, w:pw, h:ph};
+  
+  function clampBoxToCanvasPixels(rawBox, w, h) {
+    // rawBox: [x, y, w, h] already in absolute pixel coordinates of the original PNG/canvas
+    if (!rawBox || rawBox.length < 4) return null;
+    let [x, y, bw, bh] = rawBox.map(v => (Number.isFinite(v) ? v : 0));
+    // normalize negatives
+    if (bw < 0) { x = x + bw; bw = -bw; }
+    if (bh < 0) { y = y + bh; bh = -bh; }
+    // clamp to canvas bounds
+    x = Math.max(0, Math.min(w, x));
+    y = Math.max(0, Math.min(h, y));
+    bw = Math.max(0, Math.min(w - x, bw));
+    bh = Math.max(0, Math.min(h - y, bh));
+    // discard tiny/invalid
+    if (!(bw > 0 && bh > 0)) return null;
+    return { x: Math.round(x), y: Math.round(y), w: Math.round(bw), h: Math.round(bh) };
   }
 
   // Invert whole image then restore boxes region from original
@@ -139,20 +151,38 @@
     } catch(_) {}
     try {
       const { modelUrl, imageData, canvasWidth, canvasHeight } = msg;
+      // 入力として与えられるPNG（キャンバス）の画像サイズをログ出力
+      try {
+        console.log('入力PNGサイズ:', canvasWidth, 'x', canvasHeight);
+      } catch(_) {}
       await ensureModel(modelUrl);
       let boxPx = null;
+      let rawArr = null;
       await tf.tidy(() => {
         const x = imageDataToInput(imageData);
         const y = model.predict(x);
         const arr = y.dataSync();
-        if (arr && arr.length >= 4) {
-          const box = [arr[0], arr[1], arr[2], arr[3]];
-          const px = normBoxToPixels(box, canvasWidth, canvasHeight);
-          if (px && px.w * px.h >= 25) {
-            boxPx = px;
-          }
+        // 出力された値に224倍したものが「596×842 座標系の絶対値」
+        rawArr = Array.isArray(arr) ? Array.from(arr).map(v => v * 224) : Array.from(arr).map(v => v * 224);
+        if (rawArr && rawArr.length >= 4) {
+          const BASE_W = 596, BASE_H = 842;
+          const sx = canvasWidth / BASE_W;
+          const sy = canvasHeight / BASE_H;
+          // 596×842座標系 → 入力PNGキャンバス座標へスケーリング
+          const scaledToCanvas = [
+            rawArr[0] * sx,
+            rawArr[1] * sy,
+            rawArr[2] * sx,
+            rawArr[3] * sy
+          ];
+          const px = clampBoxToCanvasPixels(scaledToCanvas, canvasWidth, canvasHeight);
+          if (px && px.w * px.h >= 25) boxPx = px;
         }
       });
+      // スケール調整後（キャンバス座標系）の [x,y,w,h] をログ出力
+      try {
+        console.log('スケール調整後のボックス [x,y,w,h]:', boxPx ? [boxPx.x, boxPx.y, boxPx.w, boxPx.h] : null);
+      } catch(_) {}
       let resultImageData = imageData;
       if (boxPx) {
         resultImageData = selectiveInvertOutsideBoxes(imageData, [boxPx]);
@@ -160,7 +190,7 @@
         // no box => invert everything
         resultImageData = selectiveInvertOutsideBoxes(imageData, []);
       }
-      parent.postMessage({ type: 'predictResult', ok: true, box: boxPx, imageData: resultImageData }, '*', [resultImageData.data.buffer]);
+  parent.postMessage({ type: 'predictResult', ok: true, box: boxPx, raw: rawArr, imageData: resultImageData }, '*', [resultImageData.data.buffer]);
     } catch (err) {
       parent.postMessage({ type: 'predictResult', ok: false, error: String(err) }, '*');
     }
