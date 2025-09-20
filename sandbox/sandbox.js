@@ -156,41 +156,55 @@
         console.log('入力PNGサイズ:', canvasWidth, 'x', canvasHeight);
       } catch(_) {}
       await ensureModel(modelUrl);
-      let boxPx = null;
-      let rawArr = null;
+      let boxPx = null;        // 後方互換用：先頭のボックス
+      let boxesPx = [];        // 新: 全ボックス（ピクセル）
+      let rawArr = null;       // 生の出力（正規化 [x1,y1,x2,y2] のフラット配列想定）
       await tf.tidy(() => {
         const x = imageDataToInput(imageData);
         const y = model.predict(x);
         const arr = y.dataSync();
-        // 出力された値に224倍したものが「596×842 座標系の絶対値」
-        rawArr = Array.isArray(arr) ? Array.from(arr).map(v => v * 224) : Array.from(arr).map(v => v * 224);
-        if (rawArr && rawArr.length >= 4) {
-          const BASE_W = 596, BASE_H = 842;
-          const sx = canvasWidth / BASE_W;
-          const sy = canvasHeight / BASE_H;
-          // 596×842座標系 → 入力PNGキャンバス座標へスケーリング
-          const scaledToCanvas = [
-            rawArr[0] * sx,
-            rawArr[1] * sy,
-            rawArr[2] * sx,
-            rawArr[3] * sy
+        rawArr = Array.from(arr);
+        // verify.py と同様: 出力は [x1,y1,x2,y2] の正規化値が MAX_BOXES 個フラットに連なる
+        const n = Math.floor(rawArr.length / 4);
+        for (let i = 0; i < n; i++) {
+          const px1 = rawArr[i*4 + 0];
+          const py1 = rawArr[i*4 + 1];
+          const px2 = rawArr[i*4 + 2];
+          const py2 = rawArr[i*4 + 3];
+          // ほぼ0のパディング行を除外（verify.py に合わせる）
+          const sum = (px1||0) + (py1||0) + (px2||0) + (py2||0);
+          if (!(sum > 0.1)) continue;
+          // 正規化 -> ピクセル。verify.py: x=px1*w, y=py1*h, w=(px2-px1)*w, h=(py2-py1)*h
+          const absBox = [
+            //px1 * canvasWidth,
+            //py1 * canvasHeight,
+            //(px2 - px1) * canvasWidth,
+            //(py2 - py1) * canvasHeight
+            py1 * canvasHeight,
+            px1 * canvasWidth,
+            (py2 - py1) * canvasHeight,
+            (px2 - px1) * canvasWidth
+
           ];
-          const px = clampBoxToCanvasPixels(scaledToCanvas, canvasWidth, canvasHeight);
-          if (px && px.w * px.h >= 25) boxPx = px;
+          const clamped = clampBoxToCanvasPixels(absBox, canvasWidth, canvasHeight);
+          if (clamped && (clamped.w * clamped.h) >= 25) {
+            boxesPx.push(clamped);
+          }
         }
+        if (boxesPx.length > 0) boxPx = boxesPx[0];
       });
       // スケール調整後（キャンバス座標系）の [x,y,w,h] をログ出力
       try {
         console.log('スケール調整後のボックス [x,y,w,h]:', boxPx ? [boxPx.x, boxPx.y, boxPx.w, boxPx.h] : null);
       } catch(_) {}
       let resultImageData = imageData;
-      if (boxPx) {
-        resultImageData = selectiveInvertOutsideBoxes(imageData, [boxPx]);
+      if (boxesPx && boxesPx.length > 0) {
+        resultImageData = selectiveInvertOutsideBoxes(imageData, boxesPx);
       } else {
         // no box => invert everything
         resultImageData = selectiveInvertOutsideBoxes(imageData, []);
       }
-  parent.postMessage({ type: 'predictResult', ok: true, box: boxPx, raw: rawArr, imageData: resultImageData }, '*', [resultImageData.data.buffer]);
+  parent.postMessage({ type: 'predictResult', ok: true, box: boxPx, boxes: boxesPx, raw: rawArr, imageData: resultImageData }, '*', [resultImageData.data.buffer]);
     } catch (err) {
       parent.postMessage({ type: 'predictResult', ok: false, error: String(err) }, '*');
     }

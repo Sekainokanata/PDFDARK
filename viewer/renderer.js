@@ -207,57 +207,28 @@ window.renderTextLayerFromTextContent = function renderTextLayerFromTextContent(
 // 画像反転（高品質）
 window.objectUrlMap = window.objectUrlMap || new Map();
 window.processSvgImagesHighQuality = async function processSvgImagesHighQuality(svgRoot, options = {}) {
+  // 防御的: 呼び出し側の不備やレースを考慮し、未定義なら何もしない
+  if (!svgRoot) return;
+  // 稀に内部で `svg` を参照するコード断片が混入しても落ちないように別名を用意
+  const svg = svgRoot;
   const objectUrlMap = window.objectUrlMap;
   const sampleMax = options.sampleMax ?? 200; const photoThresh = { avgSat: options.photoAvgSat ?? 0.05, colorStd: options.photoColorStd ?? 5, entropy: options.photoEntropy ?? 4.0, edgeDensity: options.photoEdgeDensity ?? 0.06 };
   const images = Array.from(svgRoot.querySelectorAll('image'));
   for (const imgEl of images) {
     try {
       let href = imgEl.getAttribute('href') || imgEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || imgEl.getAttribute('xlink:href');
-    // SVG内の <image> 要素の参照（blob: や http: など）を data: URL にインライン化する
-    async function __inlineSvgImages(svgEl) {
-      const images = Array.from(svgEl.querySelectorAll('image'));
-      const toDataUrl = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
-      for (const img of images) {
-        try {
-          const href = img.getAttribute('href') || img.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || img.getAttribute('xlink:href');
-          if (!href) continue;
-          if (href.startsWith('data:')) continue; // 既にインライン
-          // 同一オリジンの blob: や HTTP(S) を取得
-          const resp = await fetch(href);
-          if (!resp.ok) { console.warn('inlineSvgImages: fetch failed', href, resp.status); continue; }
-          const blob = await resp.blob();
-          const dataUrl = await toDataUrl(blob);
-          img.setAttribute('href', dataUrl);
-          img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUrl);
-        } catch (e) {
-          console.warn('inlineSvgImages: failed', e);
-        }
-      }
-    }
-
       if (!href) continue;
       let blob; try { const respImg = await fetch(href); if (!respImg.ok) { console.warn('image fetch failed', href, respImg.status); continue; } blob = await respImg.blob(); } catch(e){ console.warn('image fetch error', e, href); continue; }
       let tmpBitmap; try { tmpBitmap = await createImageBitmap(blob); } catch(e){ console.warn('createImageBitmap failed', e); imgEl.style.filter = 'invert(1)'; continue; }
       const sampScale = Math.min(1, sampleMax / Math.max(tmpBitmap.width || 1, tmpBitmap.height || 1)); const sampW = Math.max(1, Math.floor((tmpBitmap.width || 1) * sampScale)); const sampH = Math.max(1, Math.floor((tmpBitmap.height || 1) * sampScale));
       const sampCanvas = document.createElement('canvas'); sampCanvas.width = sampW; sampCanvas.height = sampH; const sctx = sampCanvas.getContext('2d'); sctx.imageSmoothingEnabled = true; sctx.imageSmoothingQuality = 'high'; sctx.drawImage(tmpBitmap, 0, 0, sampW, sampH); tmpBitmap.close?.();
-        const svgRect = svg.getBoundingClientRect();
-        let width = parseInt(svg.getAttribute('width'));
-        let height = parseInt(svg.getAttribute('height'));
-        if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-          const vb = (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number);
-          if (vb.length === 4 && vb.every(n => Number.isFinite(n))) {
-            width = vb[2]; height = vb[3];
-          } else {
-            width = Math.max(1, Math.floor(svgRect.width || 800));
-            height = Math.max(1, Math.floor(svgRect.height || 600));
-          }
-        }
+      let imgData; try { imgData = sctx.getImageData(0, 0, sampW, sampH); } catch(e){ console.warn('getImageData sampling failed', e); imgEl.style.filter = 'invert(1)'; continue; }
+      const data = imgData.data; const pixelCount = sampW * sampH; let sumSat = 0, sumR=0,sumG=0,sumB=0; for (let i=0;i<data.length;i+=4){ const r=data[i],g=data[i+1],b=data[i+2]; sumR+=r; sumG+=g; sumB+=b; const rn=r/255, gn=g/255, bn=b/255; const mx=Math.max(rn,gn,bn), mn=Math.min(rn,gn,bn); const l=(mx+mn)/2; const s=(mx===mn)?0:(l>0.5 ? (mx-mn)/(2-mx-mn) : (mx-mn)/(mx+mn)); sumSat+=s; }
+      const avgSat = sumSat / pixelCount; const meanR=sumR/pixelCount, meanG=sumG/pixelCount, meanB=sumB/pixelCount; let varSum=0; for(let i=0;i<data.length;i+=4){ const r=data[i],g=data[i+1],b=data[i+2]; const dr=r-meanR,dg=g-meanG,db=b-meanB; const mag=Math.sqrt(dr*dr+dg*dg+db*db); varSum+=mag*mag; } const colorStd=Math.sqrt(varSum/pixelCount);
       const histBins=64; const hist=new Uint32Array(histBins); const lum=new Float32Array(pixelCount); for(let y=0,idx=0;y<sampH;y++){ for(let x=0;x<sampW;x++,idx++){ const i=(y*sampW+x)*4; const r=data[i],g=data[i+1],b=data[i+2]; lum[idx]=(0.2126*r+0.7152*g+0.0722*b)/255; const v=Math.min(histBins-1, Math.floor(lum[idx]*histBins)); hist[v]++; } }
-        // SVGを複製し、画像をインライン化してからシリアライズ
-        const svgClone = svg.cloneNode(true);
-        try { await __inlineSvgImages(svgClone); } catch(e) { console.warn('inline images failed, continue without inlining', e); }
+      let entropy=0; for(let b=0;b<histBins;b++){ if (hist[b]===0) continue; const p=hist[b]/pixelCount; entropy -= p * Math.log2(p); }
       let edgeCount=0; for (let y=1; y<sampH-1; y++){ for(let x=1; x<sampW-1; x++){ const idx=y*sampW+x; const gx=( -lum[idx - sampW - 1] + lum[idx - sampW + 1] + -2*lum[idx - 1] + 2*lum[idx + 1] + -1*lum[idx + sampW - 1] + 1*lum[idx + sampW + 1] ); const gy=( -lum[idx - sampW - 1] + -2*lum[idx - sampW] + -1*lum[idx - sampW + 1] + 1*lum[idx + sampW - 1] + 2*lum[idx + sampW] + 1*lum[idx + sampW + 1] ); const g=Math.hypot(gx,gy); if(g>0.2) edgeCount++; } }
-        const svgString = serializer.serializeToString(svgClone);
+      const totalEdgeTest=(sampW-2)*(sampH-2)||1; const edgeDensity=edgeCount/totalEdgeTest;
       const isPhoto = (avgSat >= photoThresh.avgSat && colorStd >= photoThresh.colorStd && entropy >= photoThresh.entropy && edgeDensity >= photoThresh.edgeDensity) || (avgSat >= (photoThresh.avgSat*1.2) && entropy >= (photoThresh.entropy*0.9));
       if (isPhoto) { const prev = objectUrlMap.get(imgEl); if (prev && prev.url && prev.revokeOnNext && prev.url.startsWith('blob:')) URL.revokeObjectURL(prev.url); objectUrlMap.delete(imgEl); continue; }
       let fullBitmap; try { const proto = await createImageBitmap(blob); const fullW = proto.width||1, fullH=proto.height||1; const maxFull = options.maxFullSizeForInvert ?? 2500; if (Math.max(fullW, fullH) > maxFull) { imgEl.style.filter = 'invert(1)'; proto.close?.(); continue; } fullBitmap = await createImageBitmap(proto); proto.close?.(); } catch(e){ console.warn('createImageBitmap(full) failed', e); imgEl.style.filter='invert(1)'; continue; }
@@ -271,283 +242,127 @@ window.processSvgImagesHighQuality = async function processSvgImagesHighQuality(
   }
 };
 
-// サンドボックス連携: TF.js推論は sandbox/sandbox.html 内で実行
-function __ensureSandbox() {
-  if (window.__tf_sandbox_iframe && window.__tf_sandbox_port) return { iframe: window.__tf_sandbox_iframe, port: window.__tf_sandbox_port };
-  const url = window.chrome?.runtime?.getURL ? chrome.runtime.getURL('sandbox/sandbox.html') : 'sandbox/sandbox.html';
-  const iframe = document.createElement('iframe');
-  iframe.src = url; iframe.style.display = 'none'; iframe.sandbox = 'allow-scripts';
-  document.body.appendChild(iframe);
-  window.__tf_sandbox_iframe = iframe;
-  // メッセージポートは直接 window でやり取り
-  window.__tf_sandbox_port = iframe.contentWindow;
-  return { iframe, port: window.__tf_sandbox_port };
-}
+// ===============================
+// PNG 経路（テキストなしページ）: PDF → Canvas → ML(サンドボックス) → 反転除外 → Canvas を paper に配置
+// ===============================
 
-async function __predictSingleBoxOnCanvas_viaSandbox(canvas) {
-  try {
-    const { port } = __ensureSandbox();
-    // sandboxReady を一度だけ待つ（既にロード済みならすぐ進む）
-    if (!window.__tf_sandbox_ready) {
-      window.__tf_sandbox_ready = new Promise((resolve) => {
-        const onReady = (ev) => {
-          if (!ev || !ev.data) return;
-          const expectedSource = window.__tf_sandbox_iframe?.contentWindow;
-          if (expectedSource && ev.source !== expectedSource) return;
-          if (ev.data.type === 'sandboxReady') {
-            window.removeEventListener('message', onReady);
-            resolve(true);
-          }
-        };
-        window.addEventListener('message', onReady);
-        // 3秒で諦めて続行（後続で predict のタイムアウトが効く）
-        setTimeout(() => { window.removeEventListener('message', onReady); resolve(false); }, 3000);
-      });
-    }
-    await window.__tf_sandbox_ready;
-    const modelUrl = window.chrome?.runtime?.getURL
-      ? chrome.runtime.getURL('tfjs_multi_bounding_box_model_1/model.json')
-      : 'tfjs_multi_bounding_box_model_1/model.json';
-    // キャンバスから ImageData を取得
-    const ctx = canvas.getContext('2d');
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const payload = {
-      type: 'predict',
-      modelUrl,
-      imageData,
-      canvasWidth: canvas.width,
-      canvasHeight: canvas.height
-    };
-    const res = await new Promise((resolve, reject) => {
-      const expectedSource = window.__tf_sandbox_iframe?.contentWindow;
-      const onMsg = (ev) => {
-        if (!ev || !ev.data) return;
-        if (expectedSource && ev.source !== expectedSource) return; // 他のメッセージは無視
-        const msg = ev.data;
-        if (msg.type === 'sandboxReady') {
-          // ignore; wait for actual result
-          return;
-        }
-        if (msg.type === 'predictResult') {
-          window.removeEventListener('message', onMsg);
-          resolve(msg);
-        }
-      };
-      window.addEventListener('message', onMsg);
+// サンドボックスの用意（単一 iframe を使いまわし）
+window.__ensureMlSandboxReady = async function __ensureMlSandboxReady(){
+  if (window.__mlSandbox && window.__mlSandbox.ready) return window.__mlSandbox;
+  const sb = window.__mlSandbox || (window.__mlSandbox = { ready: false, queue: Promise.resolve() });
+  if (sb.readyPromise) return sb.readyPromise;
+
+  sb.readyPromise = new Promise((resolve) => {
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.width = '0'; iframe.height = '0';
+    // 拡張内のサンドボックスHTML
+    const src = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL)
+      ? chrome.runtime.getURL('sandbox/sandbox.html')
+      : 'sandbox/sandbox.html';
+    iframe.src = src;
+    document.body.appendChild(iframe);
+
+    function onMsg(ev){
       try {
-        // targetOrigin は sandbox なので 'null' オリジン、'*' を指定
-        port.postMessage(payload, '*', [imageData.data.buffer]);
-      } catch (e) {
-        window.removeEventListener('message', onMsg);
-        reject(e);
-      }
-      // 10秒タイムアウト
-      setTimeout(() => { window.removeEventListener('message', onMsg); reject(new Error('sandbox predict timeout')); }, 10000);
-    });
-    if (res && res.ok) {
-      try { if (Array.isArray(res.raw)) console.log('ML raw output [x,y,w,h]:', res.raw); } catch(_) {}
-      if (res.box) {
-        return { x: res.box.x, y: res.box.y, w: res.box.w, h: res.box.h };
-      }
-      return null; // okでもボックス無し
-    } else {
-      return null;
-    }
-  } catch (e) {
-    console.warn('predict via sandbox failed', e);
-    return null;
-  }
-}
-
-function __invertCanvasInPlace(ctx, w, h) {
-  const img = ctx.getImageData(0, 0, w, h);
-  const d = img.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const a = d[i + 3] / 255;
-    if (a === 0) continue;
-    let r = d[i] / a, g = d[i + 1] / a, b = d[i + 2] / a;
-    r = 255 - r; g = 255 - g; b = 255 - b;
-    d[i] = Math.round(r * a); d[i + 1] = Math.round(g * a); d[i + 2] = Math.round(b * a);
-  }
-  ctx.putImageData(img, 0, 0);
-}
-
-async function __selectiveInvertOutsideBoxes(canvas, boxes /* array of {x,y,w,h} or null */) {
-  const w = canvas.width, h = canvas.height;
-  const out = document.createElement('canvas');
-  out.width = w; out.height = h;
-  const octx = out.getContext('2d');
-  octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = 'high';
-
-  // 元画像を別キャンバスにコピー
-  const orig = document.createElement('canvas'); orig.width = w; orig.height = h;
-  const oictx = orig.getContext('2d');
-  oictx.drawImage(canvas, 0, 0);
-
-  // まず全体を反転
-  octx.drawImage(canvas, 0, 0);
-  __invertCanvasInPlace(octx, w, h);
-
-  // ボックスがあれば、その領域だけ元画像で上書き（= 反転しない領域）
-  if (Array.isArray(boxes) && boxes.length) {
-    for (const b of boxes) {
-      if (!b) continue;
-      const { x, y, w: bw, h: bh } = b;
-      if (bw <= 0 || bh <= 0) continue;
-      octx.save();
-      octx.beginPath();
-      octx.rect(x, y, bw, bh);
-      octx.clip();
-      octx.drawImage(orig, 0, 0);
-      octx.restore();
-    }
-  }
-  return out;
-}
-
-// テキストが無いページ用: SVGをPNGに変換して置き換え（モデルがあればボックス外のみ反転）
-window.convertSvgToPng = async function convertSvgToPng(svg, paper) {
-  if (!svg || !paper || svg.__pngConverted) return;
-  try {
-    // SVGのサイズ
-    const svgRect = svg.getBoundingClientRect();
-    const width = Math.max(1, parseInt(svg.getAttribute('width') || svgRect.width || 800));
-    const height = Math.max(1, parseInt(svg.getAttribute('height') || svgRect.height || 600));
-
-    // SVGをシリアライズ
-    const serializer = new XMLSerializer();
-    const svgString = serializer.serializeToString(svg);
-    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-    const svgUrl = URL.createObjectURL(svgBlob);
-
-    // 画像として読み込み
-    const img = new Image();
-    img.width = width; img.height = height;
-
-    const pngBlob = await new Promise((resolve, reject) => {
-      img.onload = async () => {
-        try {
-          // SVG→Canvas 描画（白背景）
-          const canvas = document.createElement('canvas');
-          canvas.width = width; canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, width, height);
-          ctx.drawImage(img, 0, 0, width, height);
-
-          // サンドボックス推論（失敗したら反転なし）
-          let processedCanvas;
-          try {
-            let boxes = [];
-            const box = await __predictSingleBoxOnCanvas_viaSandbox(canvas);
-            if (box) boxes.push(box);
-            if (boxes.length > 0) {
-              processedCanvas = await __selectiveInvertOutsideBoxes(canvas, boxes);
-            } else {
-              // ボックスが無い（モデル未ロード/検出不可）→ 反転せずそのまま
-              processedCanvas = canvas;
-            }
-          } catch (e) {
-            console.warn('sandbox selective invert failed, fallback to no-invert', e);
-            processedCanvas = canvas; // 反転なし
-          }
-
-          // data URL で出力（blob: の読み込み相性問題を避ける）
-          try {
-            const dataUrl = processedCanvas.toDataURL('image/png');
-            resolve(dataUrl);
-          } catch (e) {
-            reject(e);
-          }
-        } catch (err) {
-          reject(err);
-        } finally {
-          URL.revokeObjectURL(svgUrl);
+        if (ev.source === iframe.contentWindow && ev.data && ev.data.type === 'sandboxReady'){
+          window.removeEventListener('message', onMsg);
+          sb.iframe = iframe;
+          sb.win = iframe.contentWindow;
+          sb.ready = true;
+          sb.queue = Promise.resolve();
+          resolve(sb);
         }
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(svgUrl);
-        reject(new Error('Failed to load SVG as image'));
-      };
-      img.src = svgUrl;
-    });
-
-  // PNG DataURL（上で生成）
-  const pngUrl = pngBlob; // 実体は data:image/png;base64,...
-
-    // SVGラッパーを生成して <image> でPNGを埋め込む（= PNGを再度SVGとして表示）
-    const newSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    newSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    newSvg.setAttribute('width', String(width));
-    newSvg.setAttribute('height', String(height));
-    newSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    newSvg.style.display = 'block';
-  const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-  image.setAttribute('href', pngUrl);
-  image.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', pngUrl);
-  image.setAttribute('x', '0'); image.setAttribute('y', '0');
-    image.setAttribute('width', String(width)); image.setAttribute('height', String(height));
-  image.setAttribute('preserveAspectRatio', 'none');
-    newSvg.appendChild(image);
-
-    // 置き換え
-    paper.replaceChild(newSvg, svg);
-
-    // data URL のため解放は不要
-
-    newSvg.__pngConverted = true;
-  } catch (e) {
-    console.warn('convertSvgToPng failed', e);
-  }
+      } catch(_) {}
+    }
+    window.addEventListener('message', onMsg);
+  });
+  return sb.readyPromise;
 };
 
-// テキストが無いページ用（新ルート）: PDFページをCanvasに直接レンダ → PNG化して置き換え（モデルがあればボックス外のみ反転）
-window.convertPageToPng = async function convertPageToPng(page, viewport, paper) {
-  if (!page || !viewport || !paper) return;
-  try {
-    // 1) PDFページをCanvasへ直接レンダリング（白背景）
-    const width = Math.max(1, Math.ceil(viewport.width));
-    const height = Math.max(1, Math.ceil(viewport.height));
-    const canvas = document.createElement('canvas');
-    canvas.width = width; canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, width, height);
-    await page.render({ canvasContext: ctx, viewport }).promise;
-
-    // 2) モデル推論（サンドボックス経由）→ ボックス外のみ反転（ボックス無しなら反転なし）
-    let processedCanvas = canvas;
+// サンドボックスでの推論を直列実行（reqId 不使用のため直列化で競合回避）
+window.__predictInSandbox = async function __predictInSandbox(imageData, width, height){
+  const sb = await window.__ensureMlSandboxReady();
+  // 実行を直列化
+  const run = () => new Promise((resolve) => {
+    const onMsg = (ev) => {
+      try {
+        if (ev.source === sb.win && ev.data && ev.data.type === 'predictResult'){
+          window.removeEventListener('message', onMsg);
+          resolve(ev.data);
+        }
+      } catch(_) {}
+    };
+    window.addEventListener('message', onMsg);
+    const modelUrl = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL)
+      ? chrome.runtime.getURL('tfjs_multi_bounding_box_model_1/model.json')
+      : 'tfjs_multi_bounding_box_model_1/model.json';
     try {
-      const box = await __predictSingleBoxOnCanvas_viaSandbox(canvas);
-      if (box) {
-        processedCanvas = await __selectiveInvertOutsideBoxes(canvas, [box]);
-      }
+      sb.win.postMessage({ type: 'predict', modelUrl, imageData, canvasWidth: width, canvasHeight: height }, '*', [imageData.data.buffer]);
     } catch (e) {
-      console.warn('sandbox selective invert failed, fallback to no-invert', e);
-      processedCanvas = canvas; // 反転なし
+      // 転送に失敗した場合はコピーで再送（transferables 非対応環境）
+      const clone = new ImageData(new Uint8ClampedArray(imageData.data), imageData.width, imageData.height);
+      try { sb.win.postMessage({ type: 'predict', modelUrl, imageData: clone, canvasWidth: width, canvasHeight: height }, '*'); }
+      catch(_) { window.removeEventListener('message', onMsg); resolve({ ok:false, error: 'postMessage failed' }); }
     }
+  });
+  sb.queue = sb.queue.then(() => run());
+  return sb.queue;
+};
 
-    // 3) DataURL で PNG 化し、<svg><image> として差し替え
-    const dataUrl = processedCanvas.toDataURL('image/png');
-    const newSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    newSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    newSvg.setAttribute('width', String(width));
-    newSvg.setAttribute('height', String(height));
-    newSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    newSvg.style.display = 'block';
-    const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-    image.setAttribute('href', dataUrl);
-    image.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', dataUrl);
-    image.setAttribute('x', '0'); image.setAttribute('y', '0');
-    image.setAttribute('width', String(width)); image.setAttribute('height', String(height));
-    image.setAttribute('preserveAspectRatio', 'none');
-    newSvg.appendChild(image);
+// PDF.js ページを Canvas に描画して ML 反転（ボックス外）を適用し、paper に配置
+window.convertPageToPng = async function convertPageToPng(page, viewport, paper){
+  // Canvas 準備（整数サイズ推奨）
+  const w = Math.max(1, Math.round(viewport.width));
+  const h = Math.max(1, Math.round(viewport.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
 
-    // 既存のSVGがあれば置換、無ければ追加
-    const oldSvg = paper.querySelector('svg');
-    if (oldSvg) paper.replaceChild(newSvg, oldSvg);
-    else paper.appendChild(newSvg);
-
-    newSvg.__pngConverted = true;
+  // PDF 描画
+  try {
+    const renderTask = page.render({ canvasContext: ctx, viewport });
+    await renderTask.promise;
   } catch (e) {
-    console.warn('convertPageToPng failed', e);
+    console.warn('page.render to canvas failed; fallback to plain invert', e);
   }
+
+  // ImageData 取得
+  let imgData;
+  try {
+    imgData = ctx.getImageData(0, 0, w, h);
+  } catch (e) {
+    console.warn('getImageData failed; fallback to CSS invert', e);
+    // 画像としてそのまま配置して CSS invert で代替
+    canvas.style.filter = 'invert(1)';
+    paper.appendChild(canvas);
+    return canvas;
+  }
+
+  // サンドボックスで推論（ボックス外のみ反転）
+  let result;
+  try {
+    result = await window.__predictInSandbox(imgData, w, h);
+  } catch (e) {
+    console.warn('sandbox predict failed; fallback to full invert', e);
+    result = { ok: false };
+  }
+
+  if (result && result.ok && result.imageData) {
+    try { ctx.putImageData(result.imageData, 0, 0); }
+    catch (e) { console.warn('putImageData failed; using fallback invert', e); canvas.style.filter = 'invert(1)'; }
+  } else {
+    // フォールバック: その場で全反転（アルファ保持）
+    try {
+      const d = imgData.data;
+      for (let i=0;i<d.length;i+=4){ const a=d[i+3]/255; if(a===0) continue; let r=d[i]/a,g=d[i+1]/a,b=d[i+2]/a; r=255-r; g=255-g; b=255-b; d[i]=Math.round(r*a); d[i+1]=Math.round(g*a); d[i+2]=Math.round(b*a); }
+      ctx.putImageData(imgData, 0, 0);
+    } catch(e){ canvas.style.filter = 'invert(1)'; }
+  }
+
+  paper.appendChild(canvas);
+  try { console.log('ML反転(ボックス外)を適用しました'); } catch(_) {}
+  return canvas;
 };
