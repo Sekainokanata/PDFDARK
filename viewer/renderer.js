@@ -262,93 +262,121 @@ window.detectPhotoRegionsClassic = function detectPhotoRegionsClassic(imgDataSma
   try {
     if (!imgDataSmall || !imgDataSmall.data) return { ok:false, boxes:[], reason:'no image data' };
     const opts = Object.assign({
-      cellSize: 16,                // エッジ密度評価のセル解像度
-      edgeGradThreshold: 0.2,      // Sobel 正規化勾配の閾値
-      cellEdgeDensityMin: 0.06,    // セルの活性判定(エッジ割合)
-      minAreaRatio: 0.02,          // ページに対する最小面積比
-      maxAreaRatio: 0.90,          // ページに対する最大面積比
-      minAspect: 0.2,              // アスペクト比の下限 (細長すぎ回避)
-      maxAspect: 5.0,              // アスペクト比の上限
-      regionEdgeDensityMin: 0.03,  // 候補矩形全体のエッジ密度最小値
-      expandCells: 1               // セル矩形拡張マージン
+      cellSize: 16,                 // 特徴量評価のセル解像度
+      edgeGradThreshold: 0.18,      // Sobel勾配の二値化閾値（正規化後）
+      // セルを「写真的」と判定するための基準
+      cellEntropyMin: 3.4,          // グレーヒストグラムのエントロピー下限（緩め）
+      cellStdMin: 0.08,             // グレー標準偏差(0..1)の下限（緩め）
+      cellSatMin: 0.06,             // 平均彩度の下限（カラー/低彩度写真も許容）
+      cellEdgeDensityMax: 0.18,     // 写真セルとして許容するエッジ密度上限（やや緩め）
+      // 領域（矩形）でのフィルタ
+      minAreaRatio: 0.015,          // ページに対する最小面積比（中サイズの写真も拾う）
+      maxAreaRatio: 0.90,           // ページに対する最大面積比（大きい写真も許容）
+      minAspect: 0.3,               // アスペクト比下限
+      maxAspect: 3.5,               // アスペクト比上限
+      regionEdgeDensityMax: 0.14,   // 領域のエッジ密度上限（やや緩め）
+      regionEntropyMin: 3.4,        // 領域の最低エントロピー（緩め）
+      regionStdMin: 0.08,           // 領域の最低標準偏差（緩め）
+      regionSatMin: 0.06,           // 領域の最低彩度（緩め）
+      regionMinSignals: 2,          // 何指標以上満たせば写真扱いにするか
+      expandCells: 0                 // マージン拡張（0推奨）
     }, options);
 
     const sw = imgDataSmall.width|0, sh = imgDataSmall.height|0; if (!sw || !sh) return { ok:false, boxes:[] };
     const sdata = imgDataSmall.data;
-    // 1) グレースケール + 正規化
+
+    // 1) グレースケール[0..1] + Sobel勾配 + エッジ二値化
     const gray = new Float32Array(sw * sh);
     for (let i=0, j=0; i<sdata.length; i+=4, j++) {
-      // Rec.709
       const r = sdata[i], g = sdata[i+1], b = sdata[i+2];
       gray[j] = (0.2126*r + 0.7152*g + 0.0722*b) / 255;
     }
-
-    // 2) Sobel で勾配強度
     const grad = new Float32Array(sw * sh);
     for (let y=1; y<sh-1; y++) {
       for (let x=1; x<sw-1; x++) {
         const i = y*sw + x;
         const gxm = -gray[i-sw-1] + gray[i-sw+1] + -2*gray[i-1] + 2*gray[i+1] + -gray[i+sw-1] + gray[i+sw+1];
         const gym = -gray[i-sw-1] + -2*gray[i-sw] + -gray[i-sw+1] + gray[i+sw-1] + 2*gray[i+sw] + gray[i+sw+1];
-        const g = Math.hypot(gxm, gym);
-        grad[i] = g; // 0..~
+        grad[i] = Math.hypot(gxm, gym);
       }
     }
-    // 簡易正規化（最大値で割る）
     let gmax = 0; for (let i=0;i<grad.length;i++) if (grad[i] > gmax) gmax = grad[i];
-    const invGmax = gmax > 0 ? 1/gmax : 1;
-    for (let i=0;i<grad.length;i++) grad[i] *= invGmax;
-
-    // 3) エッジ二値化
+    const invGmax = gmax > 0 ? 1/gmax : 1; for (let i=0;i<grad.length;i++) grad[i] *= invGmax;
     const edge = new Uint8Array(sw * sh);
-    const gth = opts.edgeGradThreshold;
-    for (let i=0;i<grad.length;i++) edge[i] = grad[i] >= gth ? 1 : 0;
+    const gth = opts.edgeGradThreshold; for (let i=0;i<grad.length;i++) edge[i] = grad[i] >= gth ? 1 : 0;
 
-    // 4) セル集計（エッジ密度）
+    // ページ全体の簡易指標（フォールバック判定用）
+    let pageEdgeCnt = 0, pageSatSum = 0, pageHist = new Uint32Array(64);
+    for (let j=0; j<edge.length; j++) pageEdgeCnt += edge[j];
+    for (let i=0, px=0; i<sdata.length; i+=4, px++) {
+      const r=sdata[i]/255, g=sdata[i+1]/255, b=sdata[i+2]/255; const max=Math.max(r,g,b), min=Math.min(r,g,b);
+      const l=(max+min)/2; const s=(max===min)?0:(l>0.5?(max-min)/(2-max-min):(max-min)/(max+min)); pageSatSum += s;
+      const gv = gray[px]; const bin = Math.min(63, (gv*64)|0); pageHist[bin]++;
+    }
+    const pageArea = sw*sh || 1;
+    const pageEdgeDen = pageEdgeCnt / pageArea;
+    const pageAvgSat = pageSatSum / pageArea;
+    let pageEntropy = 0; for (let b=0;b<pageHist.length;b++){ if (!pageHist[b]) continue; const p=pageHist[b]/pageArea; pageEntropy -= p*Math.log2(p); }
+
+    // 2) セル特徴量（エッジ密度・グレー平均/分散・エントロピー・彩度平均）
     const cs = opts.cellSize|0; const cw = Math.ceil(sw / cs), ch = Math.ceil(sh / cs);
-    const cellActive = new Uint8Array(cw * ch);
+    const cellPhoto = new Uint8Array(cw * ch);
+    const bins = 32; // ヒストグラム解像度
     for (let cy=0; cy<ch; cy++) {
       for (let cx=0; cx<cw; cx++) {
         const x0 = cx*cs, y0 = cy*cs; const x1 = Math.min(sw, x0+cs), y1 = Math.min(sh, y0+cs);
-        let cnt = 0; const area = (x1-x0)*(y1-y0) || 1;
+        const area = (x1-x0)*(y1-y0) || 1;
+        let eCnt = 0; let sum=0, sum2=0; let satSum=0; const hist = new Uint32Array(bins);
         for (let y=y0; y<y1; y++) {
           let idx = y*sw + x0;
-          for (let x=x0; x<x1; x++, idx++) cnt += edge[idx];
+          for (let x=x0; x<x1; x++, idx++) {
+            eCnt += edge[idx];
+            const g = gray[idx];
+            sum += g; sum2 += g*g;
+            const bin = Math.min(bins-1, (g*bins)|0); hist[bin]++;
+            // 彩度: HSLのs（簡易近似）
+            const k = idx*4; const r=sdata[k]/255, gg=sdata[k+1]/255, bb=sdata[k+2]/255;
+            const max = r>gg ? (r>bb?r:bb) : (gg>bb?gg:bb); const min = r<gg ? (r<bb?r:bb) : (gg<bb?gg:bb);
+            const l = (max+min)/2; const s = (max===min) ? 0 : (l>0.5 ? (max-min)/(2-max-min) : (max-min)/(max+min));
+            satSum += s;
+          }
         }
-        const density = cnt / area;
-        cellActive[cy*cw + cx] = density >= opts.cellEdgeDensityMin ? 1 : 0;
+        const eDen = eCnt / area;
+        const mean = sum / area; const var_ = Math.max(0, (sum2/area) - mean*mean); const std = Math.sqrt(var_);
+        let entropy=0; for (let b=0;b<bins;b++){ if (!hist[b]) continue; const p = hist[b]/area; entropy -= p*Math.log2(p); }
+        const satMean = satSum / area;
+
+        // セルを「写真的」と判定
+        const looksPhoto = ( (entropy >= opts.cellEntropyMin) || (std >= opts.cellStdMin) || (satMean >= opts.cellSatMin) ) && (eDen <= opts.cellEdgeDensityMax);
+        cellPhoto[cy*cw + cx] = looksPhoto ? 1 : 0;
       }
     }
 
-    // 5) セルの連結成分ラベリング（4近傍）
+    // 3) 連結成分（写真セルのみを対象）
     const labels = new Int32Array(cw*ch); labels.fill(-1);
     const comps = []; // {minx,miny,maxx,maxy,count}
     const stack = [];
-    let curLabel = 0;
-    const push = (x,y)=>stack.push(x,y);
+    let curLabel = 0; const push = (x,y)=>stack.push(x,y);
     while (true) {
-      let start = -1;
-      for (let i=0;i<labels.length;i++) { if (cellActive[i]===1 && labels[i]===-1) { start = i; break; } }
+      let start = -1; for (let i=0;i<labels.length;i++) { if (cellPhoto[i]===1 && labels[i]===-1) { start = i; break; } }
       if (start === -1) break;
       const sx = start % cw, sy = (start / cw) | 0;
-      let minx=sx, miny=sy, maxx=sx, maxy=sy, count=0;
+      let minx=sx, miny=sy, maxx=sx, maxy=sy;
       labels[start] = curLabel; push(sx, sy);
       while (stack.length) {
         const y = stack.pop(); const x = stack.pop();
-        count++;
         if (x<minx) minx=x; if (x>maxx) maxx=x; if (y<miny) miny=y; if (y>maxy) maxy=y;
-        // 4-neigh
         const nbs = [ [x-1,y], [x+1,y], [x,y-1], [x,y+1] ];
         for (const [nx,ny] of nbs) {
           if (nx<0||ny<0||nx>=cw||ny>=ch) continue;
           const idx = ny*cw + nx;
-          if (cellActive[idx]===1 && labels[idx]===-1) { labels[idx]=curLabel; push(nx,ny); }
+          if (cellPhoto[idx]===1 && labels[idx]===-1) { labels[idx]=curLabel; push(nx,ny); }
         }
       }
-      comps.push({ minx, miny, maxx, maxy, count }); curLabel++;
+      comps.push({ minx, miny, maxx, maxy }); curLabel++;
     }
 
-    // 6) セル矩形 → ピクセル矩形、各種フィルタ
+    // 4) セル矩形 → ピクセル矩形、領域フィルタ
     const scaleX = origW / sw, scaleY = origH / sh;
     const boxes = [];
     for (const c of comps) {
@@ -361,20 +389,31 @@ window.detectPhotoRegionsClassic = function detectPhotoRegionsClassic(imgDataSma
       const y1 = Math.ceil(Math.min(sh, (cy1+1)*cs) * scaleY);
       const bw = Math.max(0, x1 - x0), bh = Math.max(0, y1 - y0);
       if (!(bw>0 && bh>0)) continue;
-      const area = bw*bh, pageArea = origW*origH;
-      const areaRatio = area / (pageArea||1);
+      const area = bw*bh, pageArea = origW*origH; const areaRatio = area / (pageArea||1);
       if (areaRatio < opts.minAreaRatio || areaRatio > opts.maxAreaRatio) continue;
       const ar = bw / bh; if (ar < opts.minAspect || ar > opts.maxAspect) continue;
-      // region edge density（元の縮小画像上で評価）
+
+      // 領域の特徴量（縮小画像上で再評価）
       const sx0 = Math.max(0, Math.floor(x0/scaleX)), sy0 = Math.max(0, Math.floor(y0/scaleY));
       const sx1 = Math.min(sw, Math.ceil(x1/scaleX)), sy1 = Math.min(sh, Math.ceil(y1/scaleY));
-      let eCnt=0, eArea=(sx1-sx0)*(sy1-sy0)||1;
-      for (let y=sy0; y<sy1; y++) { for (let x=sx0; x<sx1; x++) eCnt += edge[y*sw + x]; }
-      const eDen = eCnt / eArea; if (eDen < opts.regionEdgeDensityMin) continue;
-      boxes.push({ x:x0, y:y0, w:bw, h:bh, ar:ar, areaRatio, eDen });
+      let eCnt=0, sum=0, sum2=0, satSum=0; const eArea=(sx1-sx0)*(sy1-sy0)||1; const hist = new Uint32Array(bins);
+      for (let y=sy0; y<sy1; y++) {
+        for (let x=sx0; x<sx1; x++) {
+          const i = y*sw + x; eCnt += edge[i]; const g = gray[i]; sum += g; sum2 += g*g; const bin = Math.min(bins-1, (g*bins)|0); hist[bin]++;
+          const k = i*4; const r=sdata[k]/255, gg=sdata[k+1]/255, bb=sdata[k+2]/255; const max = r>gg ? (r>bb?r:bb) : (gg>bb?gg:bb); const min = r<gg ? (r<bb?r:bb) : (gg<bb?gg:bb); const l=(max+min)/2; const s=(max===min)?0:(l>0.5?(max-min)/(2-max-min):(max-min)/(max+min)); satSum += s;
+        }
+      }
+      const eDen = eCnt / eArea; if (eDen > opts.regionEdgeDensityMax) continue;
+      const mean = sum/eArea; const std = Math.sqrt(Math.max(0,(sum2/eArea)-mean*mean));
+      let entropy=0; for (let b=0;b<bins;b++){ if (!hist[b]) continue; const p = hist[b]/eArea; entropy -= p*Math.log2(p); }
+      const satMean = satSum / eArea;
+  const photoScore = ( (entropy >= opts.regionEntropyMin) ? 1:0 ) + ( (std >= opts.regionStdMin)?1:0 ) + ( (satMean >= opts.regionSatMin)?1:0 );
+  if (photoScore < (opts.regionMinSignals|0)) continue; // 指標数しきい値を可変化
+
+      boxes.push({ x:x0, y:y0, w:bw, h:bh, ar, areaRatio, eDen });
     }
 
-    // 7) 矩形のマージ（大きく重なるものは結合）
+    // 5) 矩形のマージ（IoUが高いものを統合しつつ、過剰拡大を避ける）
     const merged = [];
     const overlaps = (a,b)=>{
       const x0=Math.max(a.x,b.x), y0=Math.max(a.y,b.y), x1=Math.min(a.x+a.w,b.x+b.w), y1=Math.min(a.y+a.h,b.y+b.h);
@@ -384,16 +423,172 @@ window.detectPhotoRegionsClassic = function detectPhotoRegionsClassic(imgDataSma
     for (const b of boxes.sort((a,b)=> (b.areaRatio-a.areaRatio))) {
       let mergedTo = null;
       for (const m of merged) {
-        if (overlaps(m, b) >= 0.3) { // IoU 0.3 以上
+        if (overlaps(m, b) >= 0.2) { // IoU 0.2 以上で結合
           const x=Math.min(m.x,b.x), y=Math.min(m.y,b.y);
           const r=Math.max(m.x+m.w, b.x+b.w), btm=Math.max(m.y+m.h, b.y+b.h);
-          m.x=x; m.y=y; m.w=r-x; m.h=btm-y; mergedTo = m; break;
+          const newW=r-x, newH=btm-y; const newAR=newW/newH; const newAreaRatio=(newW*newH)/(origW*origH);
+          // 結合後も制約範囲に収まる場合のみ拡大
+          if (newAreaRatio <= opts.maxAreaRatio && newAR>=opts.minAspect && newAR<=opts.maxAspect) { m.x=x; m.y=y; m.w=newW; m.h=newH; }
+          mergedTo = m; break;
         }
       }
       if (!mergedTo) merged.push({ x:b.x, y:b.y, w:b.w, h:b.h });
     }
 
-    return { ok:true, boxes: merged };
+    // 6) 位置・サイズの微調整（小画像空間での列/行スキャンによりボックス端をスナップ）
+    // ピクセルマスク（写真セル由来）を生成
+    const pixelMask = new Uint8Array(sw * sh);
+    for (let y=0; y<sh; y++) {
+      const cy = Math.min(ch-1, (y / cs) | 0);
+      let rowOff = y*sw;
+      for (let x=0; x<sw; x++) {
+        const cx = Math.min(cw-1, (x / cs) | 0);
+        pixelMask[rowOff + x] = cellPhoto[cy*cw + cx];
+      }
+    }
+    function refineOneBox(b){
+      // オリジナル座標 → 小画像座標
+      let sx0 = Math.max(0, Math.floor(b.x / scaleX)), sy0 = Math.max(0, Math.floor(b.y / scaleY));
+      let sx1 = Math.min(sw, Math.ceil((b.x + b.w) / scaleX)), sy1 = Math.min(sh, Math.ceil((b.y + b.h) / scaleY));
+      const height = Math.max(1, sy1 - sy0);
+      const colEdgeMax = Math.max(opts.regionEdgeDensityMax + 0.06, 0.20);
+      const colMaskMin = 0.55; // 写真マスク比の下限
+      // 左端を内側へ進める
+      while (sx0+1 < sx1) {
+        let eCnt=0, mCnt=0; for (let y=sy0;y<sy1;y++){ const i=y*sw + sx0; eCnt+=edge[i]; mCnt+=pixelMask[i]; }
+        const eDen = eCnt/height, mDen = mCnt/height;
+        if (eDen <= colEdgeMax && mDen >= colMaskMin) break;
+        sx0++;
+      }
+      // 右端を内側へ
+      while (sx1-1 > sx0) {
+        let eCnt=0, mCnt=0; const x=sx1-1; for (let y=sy0;y<sy1;y++){ const i=y*sw + x; eCnt+=edge[i]; mCnt+=pixelMask[i]; }
+        const eDen = eCnt/height, mDen = mCnt/height;
+        if (eDen <= colEdgeMax && mDen >= colMaskMin) break;
+        sx1--;
+      }
+      // 上端を内側へ
+      const rowEdgeMax = colEdgeMax; const rowMaskMin = colMaskMin;
+      while (sy0+1 < sy1) {
+        let eCnt=0, mCnt=0; let off=sy0*sw; for (let x=sx0;x<sx1;x++){ const i=off+x; eCnt+=edge[i]; mCnt+=pixelMask[i]; }
+        const eDen = eCnt/(sx1-sx0), mDen = mCnt/(sx1-sx0);
+        if (eDen <= rowEdgeMax && mDen >= rowMaskMin) break;
+        sy0++;
+      }
+      // 下端を内側へ
+      while (sy1-1 > sy0) {
+        let eCnt=0, mCnt=0; let off=(sy1-1)*sw; for (let x=sx0;x<sx1;x++){ const i=off+x; eCnt+=edge[i]; mCnt+=pixelMask[i]; }
+        const eDen = eCnt/(sx1-sx0), mDen = mCnt/(sx1-sx0);
+        if (eDen <= rowEdgeMax && mDen >= rowMaskMin) break;
+        sy1--;
+      }
+      // 少しパディングを戻す（過収縮対策）
+      const pad = 2; sx0 = Math.max(0, sx0-pad); sy0 = Math.max(0, sy0-pad); sx1 = Math.min(sw, sx1+pad); sy1 = Math.min(sh, sy1+pad);
+      // 小画像座標 → オリジナル座標
+      const x0 = Math.max(0, Math.floor(sx0 * scaleX));
+      const y0 = Math.max(0, Math.floor(sy0 * scaleY));
+      const x1 = Math.min(origW, Math.ceil(sx1 * scaleX));
+      const y1 = Math.min(origH, Math.ceil(sy1 * scaleY));
+      const bw = Math.max(0, x1 - x0), bh = Math.max(0, y1 - y0);
+      if (bw <= 0 || bh <= 0) return b;
+      return { x:x0, y:y0, w:bw, h:bh };
+    }
+    const refined = merged.map(refineOneBox);
+
+    // 7) 安全な外側拡張（小画像空間の境界スキャンで“写真っぽさ”を保ちながら数pxだけ広げる）
+    function expandOneBox(b){
+      // オリジナル座標 → 小画像座標
+      let sx0 = Math.max(0, Math.floor(b.x / scaleX)), sy0 = Math.max(0, Math.floor(b.y / scaleY));
+      let sx1 = Math.min(sw, Math.ceil((b.x + b.w) / scaleX)), sy1 = Math.min(sh, Math.ceil((b.y + b.h) / scaleY));
+      // 小画像ピクセルで最大拡張量（各辺あたりの合計）: ボックスサイズに応じて可変 + 上限
+      const width0 = Math.max(1, sx1 - sx0), height0 = Math.max(1, sy1 - sy0);
+      const dynGrow = Math.ceil(Math.max(width0, height0) * 0.08); // 8%
+      const maxGrow = Math.min(24, Math.max(12, dynGrow));
+      let gLeft=0, gRight=0, gTop=0, gBottom=0;
+      const colEdgeMaxGrow = Math.max(opts.regionEdgeDensityMax + 0.06, 0.20);
+      const colMaskMinGrow = 0.45;
+      const rowEdgeMaxGrow = colEdgeMaxGrow; const rowMaskMinGrow = colMaskMinGrow;
+
+      // 反復で少しずつ外に広げる（4辺を順に試す）
+      let changed=true; let guard=0;
+      while (changed && guard++ < 200) {
+        changed = false;
+        const height = Math.max(1, sy1 - sy0), width = Math.max(1, sx1 - sx0);
+        // 左へ1px拡張
+        if (gLeft < maxGrow && sx0 > 0) {
+          let eCnt=0, mCnt=0; const x = sx0-1; for (let y=sy0;y<sy1;y++){ const i=y*sw + x; eCnt+=edge[i]; mCnt+=pixelMask[i]; }
+          let eDen = eCnt/height, mDen = mCnt/height;
+          // 1px外側が微妙でも、もう1px外が十分に写真的なら細い境界線を跨いで拡張可
+          if (!(eDen <= colEdgeMaxGrow && mDen >= colMaskMinGrow) && x-1 >= 0) {
+            let e2=0, m2=0; const x2=x-1; for (let y=sy0;y<sy1;y++){ const i=y*sw + x2; e2+=edge[i]; m2+=pixelMask[i]; }
+            const eDen2=e2/height, mDen2=m2/height;
+            if (eDen2 <= colEdgeMaxGrow && mDen2 >= colMaskMinGrow && eDen <= colEdgeMaxGrow*1.6) {
+              eDen = eDen2; mDen = mDen2; // 越境許可
+            }
+          }
+          if (eDen <= colEdgeMaxGrow && mDen >= colMaskMinGrow) { sx0--; gLeft++; changed = true; }
+        }
+        // 右へ1px拡張
+        if (gRight < maxGrow && sx1 < sw) {
+          let eCnt=0, mCnt=0; const x = sx1; for (let y=sy0;y<sy1;y++){ const i=y*sw + x; eCnt+=edge[i]; mCnt+=pixelMask[i]; }
+          let eDen = eCnt/height, mDen = mCnt/height;
+          if (!(eDen <= colEdgeMaxGrow && mDen >= colMaskMinGrow) && x+1 < sw) {
+            let e2=0, m2=0; const x2=x+1; for (let y=sy0;y<sy1;y++){ const i=y*sw + x2; e2+=edge[i]; m2+=pixelMask[i]; }
+            const eDen2=e2/height, mDen2=m2/height;
+            if (eDen2 <= colEdgeMaxGrow && mDen2 >= colMaskMinGrow && eDen <= colEdgeMaxGrow*1.6) {
+              eDen = eDen2; mDen = mDen2;
+            }
+          }
+          if (eDen <= colEdgeMaxGrow && mDen >= colMaskMinGrow) { sx1++; gRight++; changed = true; }
+        }
+        // 上へ1px拡張
+        if (gTop < maxGrow && sy0 > 0) {
+          let eCnt=0, mCnt=0; let off=(sy0-1)*sw; for (let x=sx0;x<sx1;x++){ const i=off+x; eCnt+=edge[i]; mCnt+=pixelMask[i]; }
+          let eDen = eCnt/width, mDen = mCnt/width;
+          if (!(eDen <= rowEdgeMaxGrow && mDen >= rowMaskMinGrow) && (sy0-2) >= 0) {
+            let e2=0, m2=0; let off2=(sy0-2)*sw; for (let x=sx0;x<sx1;x++){ const i=off2+x; e2+=edge[i]; m2+=pixelMask[i]; }
+            const eDen2=e2/width, mDen2=m2/width;
+            if (eDen2 <= rowEdgeMaxGrow && mDen2 >= rowMaskMinGrow && eDen <= rowEdgeMaxGrow*1.6) {
+              eDen = eDen2; mDen = mDen2;
+            }
+          }
+          if (eDen <= rowEdgeMaxGrow && mDen >= rowMaskMinGrow) { sy0--; gTop++; changed = true; }
+        }
+        // 下へ1px拡張
+        if (gBottom < maxGrow && sy1 < sh) {
+          let eCnt=0, mCnt=0; let off=sy1*sw; for (let x=sx0;x<sx1;x++){ const i=off+x; eCnt+=edge[i]; mCnt+=pixelMask[i]; }
+          let eDen = eCnt/width, mDen = mCnt/width;
+          if (!(eDen <= rowEdgeMaxGrow && mDen >= rowMaskMinGrow) && (sy1+1) < sh) {
+            let e2=0, m2=0; let off2=(sy1+1)*sw; for (let x=sx0;x<sx1;x++){ const i=off2+x; e2+=edge[i]; m2+=pixelMask[i]; }
+            const eDen2=e2/width, mDen2=m2/width;
+            if (eDen2 <= rowEdgeMaxGrow && mDen2 >= rowMaskMinGrow && eDen <= rowEdgeMaxGrow*1.6) {
+              eDen = eDen2; mDen = mDen2;
+            }
+          }
+          if (eDen <= rowEdgeMaxGrow && mDen >= rowMaskMinGrow) { sy1++; gBottom++; changed = true; }
+        }
+      }
+      // 小画像座標 → オリジナル座標
+      const x0 = Math.max(0, Math.floor(sx0 * scaleX));
+      const y0 = Math.max(0, Math.floor(sy0 * scaleY));
+      const x1 = Math.min(origW, Math.ceil(sx1 * scaleX));
+      const y1 = Math.min(origH, Math.ceil(sy1 * scaleY));
+      const bw = Math.max(0, x1 - x0), bh = Math.max(0, y1 - y0);
+      if (bw <= 0 || bh <= 0) return b;
+      return { x:x0, y:y0, w:bw, h:bh };
+    }
+    const expanded = refined.map(expandOneBox);
+    try {
+      console.groupCollapsed('[InvertDebug] box expand (refined -> expanded)');
+      for (let i=0;i<refined.length;i++){
+        const r=refined[i], e=expanded[i];
+        console.log(`#${i}`, 'refined:', r, 'expanded:', e);
+      }
+      console.groupEnd();
+    } catch(_) {}
+
+    // フォールバック用にページ指標も返す
+    return { ok:true, boxes: expanded, page: { edgeDensity: pageEdgeDen, avgSat: pageAvgSat, entropy: pageEntropy } };
   } catch (e) {
     console.warn('detectPhotoRegionsClassic failed', e);
     return { ok:false, boxes:[], error:String(e&&e.message||e) };
@@ -517,6 +712,23 @@ window.convertPageToPng = async function convertPageToPng(page, viewport, paper)
   let result;
   try {
     result = window.detectPhotoRegionsClassic(imgDataForModel, w, h);
+    // 第2パス: ボックスが見つからなければ、セルサイズ/しきい値を緩めて再試行
+    if (result && result.ok && (!result.boxes || result.boxes.length === 0)) {
+      const relaxed = window.detectPhotoRegionsClassic(imgDataForModel, w, h, {
+        cellSize: 24,
+        cellEdgeDensityMax: 0.22,
+        regionEdgeDensityMax: 0.18,
+        minAreaRatio: 0.01,
+        regionStdMin: 0.07,
+        regionEntropyMin: 3.0,
+        regionSatMin: 0.05,
+        regionMinSignals: 1
+      });
+      if (relaxed && relaxed.ok && relaxed.boxes && relaxed.boxes.length) {
+        result = relaxed;
+        try { console.log('[InvertDebug] second-pass detection found boxes:', relaxed.boxes.length); } catch(_) {}
+      }
+    }
   } catch (e) {
     console.warn('classic detection failed; fallback to full invert', e);
     result = { ok:false };
@@ -586,7 +798,29 @@ window.convertPageToPng = async function convertPageToPng(page, viewport, paper)
 
   if (result && result.ok) {
     const boxesPx = Array.isArray(result.boxes) ? result.boxes : (result.box ? [result.box] : []);
-    if (!applySelectiveInvert(imgData, boxesPx)) {
+    if (boxesPx.length === 0) {
+      // ページ全体が写真的なら何もしない（写真まで反転しない）
+      try {
+        const pg = result.page || {};
+        const isPhotoLike = (pg.avgSat >= 0.06 && pg.entropy >= 3.6 && pg.edgeDensity <= 0.08);
+        if (isPhotoLike) {
+          try {
+            console.groupCollapsed('[InvertDebug] page-level decision: treat as photo (no invert)');
+            console.log('Page avgSat:', pg.avgSat?.toFixed?.(3), 'entropy:', pg.entropy?.toFixed?.(2), 'edgeDensity:', pg.edgeDensity?.toFixed?.(3));
+            console.groupEnd();
+          } catch(_) {}
+          paper.appendChild(canvas);
+          return canvas;
+        }
+      } catch(_) {}
+      // それ以外は全面反転
+      try {
+        const d = imgData.data;
+        for (let i=0;i<d.length;i+=4){ const a=d[i+3]/255; if(a===0) continue; let r=d[i]/a,g=d[i+1]/a,b=d[i+2]/a; r=255-r; g=255-g; b=255-b; d[i]=Math.round(r*a); d[i+1]=Math.round(g*a); d[i+2]=Math.round(b*a); }
+        ctx.putImageData(imgData, 0, 0);
+        try { console.log('[InvertDebug] fallback: full invert (no boxes & not photo-like)'); } catch(_) {}
+      } catch(e){ canvas.style.filter = 'invert(1)'; }
+    } else if (!applySelectiveInvert(imgData, boxesPx)) {
       // 失敗時は全面反転
       try {
         const d = imgData.data;
@@ -598,11 +832,11 @@ window.convertPageToPng = async function convertPageToPng(page, viewport, paper)
   } else {
     // フォールバック: 全反転
     try {
-  try { console.warn('[InvertDebug] detection error detail:', result && result.error); } catch(_) {}
+      try { console.warn('[InvertDebug] detection error detail:', result && result.error); } catch(_) {}
       const d = imgData.data;
       for (let i=0;i<d.length;i+=4){ const a=d[i+3]/255; if(a===0) continue; let r=d[i]/a,g=d[i+1]/a,b=d[i+2]/a; r=255-r; g=255-g; b=255-b; d[i]=Math.round(r*a); d[i+1]=Math.round(g*a); d[i+2]=Math.round(b*a); }
       ctx.putImageData(imgData, 0, 0);
-      try { console.log('[InvertDebug] fallback: full invert (sandbox predict not ok)'); } catch(_) {}
+      try { console.log('[InvertDebug] fallback: full invert (detection not ok)'); } catch(_) {}
     } catch(e){ canvas.style.filter = 'invert(1)'; }
   }
 
