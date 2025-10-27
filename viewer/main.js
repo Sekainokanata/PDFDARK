@@ -6,6 +6,8 @@ window.startViewer = async function startViewer(){
   try { pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('pdfjs/pdf.worker.js'); } catch(_) {}
   const cMapUrlForExtension = chrome.runtime.getURL('pdfjs/cmaps/');
 
+  // 旧: MLサンドボックスの事前ウォームアップは廃止
+
   const params = new URLSearchParams(location.search);
   const file = params.get('file');
   if (file) {
