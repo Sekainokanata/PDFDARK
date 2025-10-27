@@ -15,13 +15,21 @@
     "48": "icon48.png"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: blob:;"
+    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: blob:;",
+    "sandbox": "sandbox allow-scripts; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval';"
+  },
+  "sandbox": {
+    "pages": [
+      "sandbox/opencv.html"
+    ]
   },
   "web_accessible_resources": [
     {
       "resources": [
         "pdfjs/pdf.worker.js",
-        "pdfjs/cmaps/*"
+        "pdfjs/cmaps/*",
+        "vendor/opencv/opencv.js",
+        "vendor/opencv/opencv_js.wasm"
       ],
       "matches": ["<all_urls>"]
     }
