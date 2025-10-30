@@ -30,7 +30,8 @@
     align-items: center;
     gap: 8px;
     padding: 8px 12px;
-    background: linear-gradient(#1f1f1f, #161616);
+    /*background: linear-gradient(#121212, #161616);*/
+    background: #121212;
     border-bottom: 1px solid rgba(255,255,255,0.04);
     box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset;
     /* 常に上部に固定（wrapperがスクロールしても可視） */
@@ -55,7 +56,7 @@
     font-size: 13px;
   }
 
-  .viewer-tool-btn:hover { background: rgba(255,255,255,0.02); }
+  .viewer-tool-btn:hover { background: #121212; }
 
   #viewer-container-wrapper {
     flex: 1 1 auto;
@@ -162,5 +163,7 @@
 
   <!-- 3) viewer-run.js: workerSrc 設定 & startViewer 実行（従来通り） -->
   <script src="viewer-run.js"></script>
+
+  <link rel="stylesheet" href="/viewer/ui.css">
 </body>
 </html>

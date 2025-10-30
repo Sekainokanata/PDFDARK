@@ -16,7 +16,7 @@ window.setupShell = function setupShell(origContainer) {
     display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px',height: '5vh',
     background: '#3C3C3C',
     borderBottom: '1px solid rgba(60,60,60,0.04)',
-    boxShadow: '0 1px 0 rgba(60,60,60,0.02) inset', color: '#e6e6e6'
+    boxShadow: '0 1px 0 rgba(60,60,60,0.02) inset', color: '#e6e6e6',
   });
 
   // left group
@@ -24,7 +24,7 @@ window.setupShell = function setupShell(origContainer) {
   leftGroup.className = 'viewer-toolbar-group';
   leftGroup.style.display = 'flex'; leftGroup.style.gap = '6px'; leftGroup.style.alignItems = 'center';
   //const btnPrev = document.createElement('button'); btnPrev.className = 'viewer-tool-btn'; btnPrev.textContent = '◀';
-  const pageInput = document.createElement('input'); pageInput.type = 'number'; pageInput.min = 1; pageInput.value = 1; pageInput.style.width = '64px'; pageInput.className = 'viewer-tool-btn';
+  const pageInput = document.createElement('input'); pageInput.type = 'number'; pageInput.min = 1; pageInput.value = 1; pageInput.style.width = '30px'; pageInput.className = 'viewer-tool-btn'; 
   //const btnNext = document.createElement('button'); btnNext.className = 'viewer-tool-btn'; btnNext.textContent = '▶';
   //leftGroup.appendChild(btnPrev); 
   leftGroup.appendChild(pageInput); 
@@ -34,7 +34,15 @@ window.setupShell = function setupShell(origContainer) {
   const centerGroup = document.createElement('div');
   centerGroup.className = 'viewer-toolbar-group'; centerGroup.style.display = 'flex'; centerGroup.style.margin = 'auto'; centerGroup.style.gap = '6px'; centerGroup.style.alignItems = 'center';
   const btnZoomOut = document.createElement('button'); btnZoomOut.className = 'viewer-tool-btn'; btnZoomOut.textContent = '-';
-  const zoomVal = document.createElement('input'); zoomVal.id = 'zoom-value'; zoomVal.value = '100%'; zoomVal.style.minWidth = '56px';
+  //zoomの数字について画面の横幅一定以下で取消
+  const zoomVal = document.createElement('input'); zoomVal.id = 'zoom-value'; zoomVal.value = '100%'; zoomVal.style.maxWidth = '10px'; 
+  if (window.matchMedia('(max-width: 767px)').matches) {
+    //スマホ処理
+    zoomVal.style.display = 'none'
+} else if (window.matchMedia('(min-width:768px)').matches) {
+    //PC処理
+    zoomVal.style.display = 'block'
+}
   const btnZoomIn = document.createElement('button'); btnZoomIn.className = 'viewer-tool-btn'; btnZoomIn.textContent = '+';
   const btnFitWidth = document.createElement('button'); btnFitWidth.className = 'viewer-tool-btn'; btnFitWidth.textContent = 'Fit Width';
   const btnFitPage = document.createElement('button'); btnFitPage.className = 'viewer-tool-btn'; btnFitPage.textContent = 'Fit Page';
@@ -42,17 +50,17 @@ window.setupShell = function setupShell(origContainer) {
 
   // right group
   const rightGroup = document.createElement('div');
-  rightGroup.className = 'viewer-toolbar-group'; rightGroup.style.marginLeft = 'auto'; rightGroup.style.display = 'flex'; rightGroup.style.gap = '6px'; rightGroup.style.alignItems = 'center';
-  const btnDownload = document.createElement('button'); btnDownload.className = 'viewer-tool-btn'; btnDownload.textContent = '↓ Download';
+  rightGroup.className = 'viewer-toolbar-group'; rightGroup.style.display = 'flex'; rightGroup.style.gap = '6px'; rightGroup.style.alignItems = 'center';
+  const btnDownload = document.createElement('button'); btnDownload.className = 'viewer-tool-btn'; btnDownload.textContent = 'Download';
   const btnSvgMode = document.createElement('button'); btnSvgMode.className = 'viewer-tool-btn'; btnSvgMode.textContent = 'Original';
-  const btnOverlayMode = document.createElement('button'); btnOverlayMode.className = 'viewer-tool-btn'; btnOverlayMode.textContent = 'フォント調整';
+  const btnOverlayMode = document.createElement('button'); btnOverlayMode.className = 'viewer-tool-btn'; btnOverlayMode.textContent = 'フォント';
   rightGroup.appendChild(btnDownload); rightGroup.appendChild(btnSvgMode); rightGroup.appendChild(btnOverlayMode);
 
   toolbar.appendChild(leftGroup); toolbar.appendChild(centerGroup); toolbar.appendChild(rightGroup);
 
   const wrapper = document.createElement('div');
   wrapper.id = 'viewer-container-wrapper';
-  Object.assign(wrapper.style, { flex: '1 1 auto', overflow: 'auto', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '20px', background: '#1E1E1E' });
+  Object.assign(wrapper.style, { flex: '1 1 auto', overflow: 'auto', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '20px', background: '#282828' });
 
   const pagesHolder = document.createElement('div');
   pagesHolder.id = 'viewer-pages';
