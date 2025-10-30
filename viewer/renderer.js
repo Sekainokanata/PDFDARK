@@ -51,7 +51,7 @@ window.pickForegroundForBackground = function pickForegroundForBackground(bgRgb)
   function srgbToLinearChannel(c) { const v = c / 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
   function relativeLuminance(rgb) { const R = srgbToLinearChannel(rgb.r), G = srgbToLinearChannel(rgb.g), B = srgbToLinearChannel(rgb.b); return 0.2126 * R + 0.7152 * G + 0.0722 * B; }
   const lum = relativeLuminance(bgRgb);
-  return lum > 0.5 ? '#000000' : '#ffffff';
+  return lum > 0.5 ? '#1E1E1E' : '#E0E0E0';
 };
 
 // 既存のスマート反転（簡略化しつつコピペ）。ここでは svg 内の文字など非彩色要素を黒背景に映える色へ置換
@@ -101,7 +101,7 @@ window.invertSvgColorsSmart = function invertSvgColorsSmart(svg, options = {}) {
       el.setAttribute('stroke', window.pickForegroundForBackground(strokeColor));
     }
   });
-  svg.style.background = '#000';
+  svg.style.background = '#1E1E1E';
 };
 
 // ハイライトの色変換サポート（バックアップ/復元/マッピング）
@@ -135,7 +135,7 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
   ui.__highlight_toggle_handler = function(){
     const newState = !window.__highlight_toggle_state.enabled;
     if (newState) { ui.btnHighlightToggle.classList.add('active'); ui.btnHighlightToggle.style.background = '#0a84ff'; }
-    else { ui.btnHighlightToggle.classList.remove('active'); ui.btnHighlightToggle.style.background = '#222'; }
+    else { ui.btnHighlightToggle.classList.remove('active'); ui.btnHighlightToggle.style.background = '#1E1E1E'; }
     try {
       if (newState) {
         document.querySelectorAll('.page').forEach(p => { const svg = p.querySelector('svg'); if (!svg) return; window.backupSvgColors(svg); window.remapHighlightsInSvg(svg, HIGHLIGHT_MAPPING_DEFAULT, Math.pow(HIGHLIGHT_TOL_DEFAULT,2)*3); });
@@ -147,7 +147,7 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
   };
   ui.btnHighlightToggle.addEventListener('click', ui.__highlight_toggle_handler);
   if (window.__highlight_toggle_state.enabled) { ui.btnHighlightToggle.classList.add('active'); ui.btnHighlightToggle.style.background = '#0a84ff'; }
-  else { ui.btnHighlightToggle.classList.remove('active'); ui.btnHighlightToggle.style.background = '#222'; }
+  else { ui.btnHighlightToggle.classList.remove('active'); ui.btnHighlightToggle.style.background = '#1E1E1E'; }
 };
 
 // ハイライト有効時に、後から追加されるページへも自動適用
@@ -178,7 +178,7 @@ window.setupHighlightObserver = function setupHighlightObserver(){
 
 // テキストレイヤ（paper内に配置）
 window.renderTextLayerFromTextContent = function renderTextLayerFromTextContent(textContent, viewport, pageDiv, options = {}) {
-  options = Object.assign({ forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#fff', zIndex: 3000, allowCopy: false }, options);
+  options = Object.assign({ forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#E0E0E0', zIndex: 3000, allowCopy: false }, options);
   const paper = pageDiv.querySelector('.paper') || pageDiv; if (getComputedStyle(paper).position === 'static') paper.style.position = 'relative';
   // 既存の textLayer があれば除去（重複生成を防止）
   try { const existing = paper.querySelector('.textLayer'); if (existing) existing.remove(); } catch(_) {}

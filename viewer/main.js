@@ -86,7 +86,7 @@ window.startViewer = async function startViewer(){
 
       // まずテキスト有無を判定
       let textContent = null; try { textContent = await page.getTextContent(); } catch(e){ console.warn('getTextContent failed for page', p, e); }
-      function looksGoodTextContent(tc){ if (!tc || !tc.items || tc.items.length === 0) return false; const sample = tc.items.slice(0, 20).map(i => i.str).join(''); return /[0-9A-Za-z\u3000-\u30FF\u4E00-\u9FFF]/.test(sample); }
+      function looksGoodTextContent(tc){ if (!tc || !tc.items || tc.items.length === 0) return false; const sample = tc.items.slice(0, 20).map(i => i.str).join(''); return /[0-9A-Za-z\u3000-\u30FF\u4E00-\u9E0E0E0]/.test(sample); }
       // SVG内のtext/tspanのうち、空白以外の文字があるかを確認
       const svgTextElems = svg.querySelectorAll('text, tspan');
       let svgHasNonEmptyText = false;
@@ -132,7 +132,7 @@ window.startViewer = async function startViewer(){
         window.invertSvgColorsSmart(svg, { satThreshold: 0.15 });
         if (hasText) {
           const wantForceVisible = (curMode === 'overlay');
-          window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: '#fff', allowCopy: allowCopy });
+          window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: '#E0E0E0', allowCopy: allowCopy });
           if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
         }
         await window.processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
@@ -150,7 +150,7 @@ window.startViewer = async function startViewer(){
       }
       if (hasText) {
         const wantForceVisible = (curMode === 'overlay');
-        window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: '#fff', allowCopy: allowCopy });
+        window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: '#E0E0E0', allowCopy: allowCopy });
         if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
       }
 
