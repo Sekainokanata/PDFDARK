@@ -126,7 +126,7 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
 
   if (!ui || !ui.toolbar) return;
   if (!ui.btnHighlightToggle) {
-    const btn = document.createElement('button'); btn.className = 'viewer-tool-btn'; btn.textContent = 'ハイライト調整'; btn.title = 'ハイライト色を青に変換/元に戻す';
+    const btn = document.createElement('button'); btn.className = 'viewer-tool-btn'; btn.textContent = 'ハ'; btn.title = 'ハイライト色を青に変換/元に戻す';
     ui.toolbar.appendChild(btn); ui.btnHighlightToggle = btn;
   } else if (ui.__highlight_toggle_handler) {
     ui.btnHighlightToggle.removeEventListener('click', ui.__highlight_toggle_handler);
@@ -135,7 +135,7 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
   ui.__highlight_toggle_handler = function(){
     const newState = !window.__highlight_toggle_state.enabled;
     if (newState) { ui.btnHighlightToggle.classList.add('active'); ui.btnHighlightToggle.style.background = '#0a84ff'; }
-    else { ui.btnHighlightToggle.classList.remove('active'); ui.btnHighlightToggle.style.background = '#1E1E1E'; }
+    else { ui.btnHighlightToggle.classList.remove('active'); ui.btnHighlightToggle.style.background = ''; }
     try {
       if (newState) {
         document.querySelectorAll('.page').forEach(p => { const svg = p.querySelector('svg'); if (!svg) return; window.backupSvgColors(svg); window.remapHighlightsInSvg(svg, HIGHLIGHT_MAPPING_DEFAULT, Math.pow(HIGHLIGHT_TOL_DEFAULT,2)*3); });
@@ -147,7 +147,7 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
   };
   ui.btnHighlightToggle.addEventListener('click', ui.__highlight_toggle_handler);
   if (window.__highlight_toggle_state.enabled) { ui.btnHighlightToggle.classList.add('active'); ui.btnHighlightToggle.style.background = '#0a84ff'; }
-  else { ui.btnHighlightToggle.classList.remove('active'); ui.btnHighlightToggle.style.background = '#1E1E1E'; }
+  else { ui.btnHighlightToggle.classList.remove('active'); ui.btnHighlightToggle.style.background = ''; }
 };
 
 // ハイライト有効時に、後から追加されるページへも自動適用

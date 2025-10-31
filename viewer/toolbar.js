@@ -67,7 +67,7 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   const STORAGE_KEY = 'viewerTextMode';
   function saveMode(m){ try { localStorage.setItem(STORAGE_KEY, m); } catch(_) {} }
   function loadMode(){ try { return localStorage.getItem(STORAGE_KEY) || 'svg'; } catch(_) { return 'svg'; } }
-  function updateButtons(mode){ if (mode === 'overlay') { ui.btnOverlayMode.style.background = '#0a84ff'; ui.btnSvgMode.style.background = '#1e1e1e'; } else { ui.btnSvgMode.style.background = '#0a84ff'; ui.btnOverlayMode.style.background = '#1e1e1e'; } }
+  function updateButtons(mode){ if (mode === 'overlay') { ui.btnOverlayMode.style.background = '#0a84ff'; ui.btnSvgMode.style.background = ''; } else { ui.btnSvgMode.style.background = '#0a84ff'; ui.btnOverlayMode.style.background = ''; } }
   function applyModeToAllPages(mode){
     const pages = ui.pagesHolder.querySelectorAll('.page');
     pages.forEach(pageDiv => {
