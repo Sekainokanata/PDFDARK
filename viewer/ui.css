@@ -1,5 +1,20 @@
 .viewer-tool-btn{
     border: none;    
+    border-radius: 50%;
+    -moz-border-radius: 50%;
+    -webkit-border-radius: 50%;
+}
+
+.viewer-tool-btn:hover{
+    background: #4b4b4b;
+}
+
+.aaaaa{
+    border-radius: 0%;
+}
+
+#zoom-value{
+    border-radius: 0%;
 }
 
 /* Chrome, Safari, Edge, Opera */
