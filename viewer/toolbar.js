@@ -58,8 +58,8 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   ui.btnZoomIn.addEventListener('click', () => { applyScaleToAllPages(Math.min(5, currentScale + 0.1)); });
   ui.btnZoomOut.addEventListener('click', () => { applyScaleToAllPages(Math.max(0.1, currentScale - 0.1)); });
   ui.btnFitWidth.addEventListener('click', fitWidth); ui.btnFitPage.addEventListener('click', fitPage);
-  ui.btnNext.addEventListener('click', () => { goToPage(parseInt(ui.pageInput.value||'1',10) + 1); });
-  ui.btnPrev.addEventListener('click', () => { goToPage(parseInt(ui.pageInput.value||'1',10) - 1); });
+  //ui.btnNext.addEventListener('click', () => { goToPage(parseInt(ui.pageInput.value||'1',10) + 1); });
+  //ui.btnPrev.addEventListener('click', () => { goToPage(parseInt(ui.pageInput.value||'1',10) - 1); });
   ui.pageInput.addEventListener('change', () => { goToPage(parseInt(ui.pageInput.value||'1',10)); });
   // Print button removed
   ui.zoomVal.addEventListener('change', () => { const raw = ui.zoomVal.value.trim().replace('%',''); const n = parseFloat(raw); if (!isFinite(n) || n <= 0) { ui.zoomVal.value = Math.round(currentScale * 100) + '%'; return; } applyScaleToAllPages(Math.max(0.1, n / 100)); });
@@ -67,7 +67,7 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   const STORAGE_KEY = 'viewerTextMode';
   function saveMode(m){ try { localStorage.setItem(STORAGE_KEY, m); } catch(_) {} }
   function loadMode(){ try { return localStorage.getItem(STORAGE_KEY) || 'svg'; } catch(_) { return 'svg'; } }
-  function updateButtons(mode){ if (mode === 'overlay') { ui.btnOverlayMode.style.background = '#0a84ff'; ui.btnSvgMode.style.background = '#222'; } else { ui.btnSvgMode.style.background = '#0a84ff'; ui.btnOverlayMode.style.background = '#222'; } }
+  function updateButtons(mode){ if (mode === 'overlay') { ui.btnOverlayMode.style.background = '#0a84ff'; ui.btnSvgMode.style.background = ''; } else { ui.btnSvgMode.style.background = '#0a84ff'; ui.btnOverlayMode.style.background = ''; } }
   function applyModeToAllPages(mode){
     const pages = ui.pagesHolder.querySelectorAll('.page');
     pages.forEach(pageDiv => {
@@ -77,7 +77,7 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
         if (textLayer) { textLayer.querySelectorAll('span').forEach(s => { s.style.color = 'transparent'; s.style.WebkitTextFillColor = 'transparent'; s.style.pointerEvents = 'none'; s.style.userSelect = 'none'; s.setAttribute('aria-hidden', 'true'); }); textLayer.style.pointerEvents = 'none'; textLayer.style.userSelect = 'none'; }
       } else {
         if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; t.style.pointerEvents = 'none'; t.style.userSelect = 'none'; }); svgElem.style.pointerEvents = 'none'; svgElem.style.userSelect = 'none'; }
-        if (textLayer) { textLayer.querySelectorAll('span').forEach(s => { s.style.color = '#fff'; s.style.WebkitTextFillColor = '#fff'; s.style.pointerEvents = 'auto'; s.style.userSelect = 'text'; s.removeAttribute('aria-hidden'); }); textLayer.style.pointerEvents = 'auto'; textLayer.style.userSelect = 'text'; textLayer.style.zIndex = '3000'; }
+        if (textLayer) { textLayer.querySelectorAll('span').forEach(s => { s.style.color = '#e0e0e0'; s.style.WebkitTextFillColor = '#e0e0e0'; s.style.pointerEvents = 'auto'; s.style.userSelect = 'text'; s.removeAttribute('aria-hidden'); }); textLayer.style.pointerEvents = 'auto'; textLayer.style.userSelect = 'text'; textLayer.style.zIndex = '3000'; }
       }
     });
     try { localStorage.setItem('viewerTextMode', mode); } catch(_) {}
