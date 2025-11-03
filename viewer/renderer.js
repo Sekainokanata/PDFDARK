@@ -1032,10 +1032,10 @@ window.convertPageToPng = async function convertPageToPng(page, viewport, paper)
     return canvas;
   }
 
-  // 転送最適化: 推論入力は長辺512px程度に縮小して送る
+  // 転送最適化: 推論入力は長辺512px程度に縮小して送る→精度が低いのでさらに上げて改善
   let imgDataForModel = imgData;
   try {
-    const maxSide = 512;
+    const maxSide = 512*2;
     const scale = Math.min(1, maxSide / Math.max(w, h));
     if (scale < 1) {
       const sw = Math.max(1, Math.round(w * scale));
