@@ -67,7 +67,7 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   const STORAGE_KEY = 'viewerTextMode';
   function saveMode(m){ try { localStorage.setItem(STORAGE_KEY, m); } catch(_) {} }
   function loadMode(){ try { return localStorage.getItem(STORAGE_KEY) || 'svg'; } catch(_) { return 'svg'; } }
-  function updateButtons(mode){ if (mode === 'overlay') { ui.btnOverlayMode.style.background = '#0a84ff'; ui.btnSvgMode.style.background = ''; } else { ui.btnSvgMode.style.background = '#0a84ff'; ui.btnOverlayMode.style.background = ''; } }
+  function updateButtons(mode){ if (mode === 'overlay') { ui.btnAjustFont.style.background = '#0a84ff'; ui.btnDarkmode.style.background = ''; } else { ui.btnDarkmode.style.background = '#0a84ff'; ui.btnAjustFont.style.background = ''; } }
   function applyModeToAllPages(mode){
     const pages = ui.pagesHolder.querySelectorAll('.page');
     pages.forEach(pageDiv => {
@@ -85,8 +85,8 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   }
 
   const initialMode = loadMode(); updateButtons(initialMode); applyModeToAllPages(initialMode);
-  ui.btnSvgMode.addEventListener('click', () => { saveMode('svg'); updateButtons('svg'); applyModeToAllPages('svg'); });
-  ui.btnOverlayMode.addEventListener('click', () => { saveMode('overlay'); updateButtons('overlay'); applyModeToAllPages('overlay'); });
+  ui.btnDarkmode.addEventListener('click', () => { saveMode('svg'); updateButtons('svg'); applyModeToAllPages('svg'); });
+  ui.btnAjustFont.addEventListener('click', () => { saveMode('overlay'); updateButtons('overlay'); applyModeToAllPages('overlay'); });
 
   window.__viewer_applyScaleToAllPages = applyScaleToAllPages;
   window.__viewer_goToPage = function(n){ goToPage(n); };
