@@ -126,7 +126,9 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
 
   if (!ui || !ui.toolbar) return;
   if (!ui.btnHighlightToggle) {
-    const btn = document.createElement('button'); btn.className = 'viewer-tool-btn'; btn.textContent = 'ハイライト調整'; btn.title = 'ハイライト色を青に変換/元に戻す';
+    const btn = document.createElement('button'); btn.className = 'viewer-tool-btn'; btn.title = 'ハイライト色を変換';
+    const highlightIcon = document.createElement('img'); highlightIcon.className = 'icons'; highlightIcon.src = 'images/hightlight.png'; highlightIcon.alt = 'ハ'; 
+    btn.appendChild(highlightIcon);
     ui.toolbar.appendChild(btn); ui.btnHighlightToggle = btn;
   } else if (ui.__highlight_toggle_handler) {
     ui.btnHighlightToggle.removeEventListener('click', ui.__highlight_toggle_handler);
