@@ -51,17 +51,27 @@ window.setupShell = function setupShell(origContainer) {
   //zoomの数字について画面の横幅一定以下で取消
   const zoomVal = document.createElement('input'); zoomVal.id = 'zoom-value'; zoomVal.value = '100%'; zoomVal.style.maxWidth = '10px'; zoomVal.style.background = '#1E1E1E';
   const btnZoomIn = document.createElement('button'); btnZoomIn.className = 'viewer-tool-btn'; btnZoomIn.textContent = '+';
-  const btnFitWidth = document.createElement('button'); btnFitWidth.className = 'viewer-tool-btn'; btnFitWidth.textContent = 'FW'; btnFitWidth.title = 'ページの横幅に合わせる'
-  const btnFitPage = document.createElement('button'); btnFitPage.className = 'viewer-tool-btn'; btnFitPage.textContent = 'FP'; btnFitPage.title = 'ページの高さに合わせる'
+  const btnFitWidth = document.createElement('button'); btnFitWidth.className = 'viewer-tool-btn'; btnFitWidth.title = 'ページの横幅に合わせる'
+  const fitWidthIcon = document.createElement('img'); fitWidthIcon.className = 'icons'; fitWidthIcon.src = 'images/fit_to_width.png'; fitWidthIcon.alt = 'FW'; 
+  btnFitWidth.appendChild(fitWidthIcon);
+  const btnFitPage = document.createElement('button'); btnFitPage.className = 'viewer-tool-btn'; btnFitPage.title = 'ページの高さに合わせる'
+  const fitPageIcon = document.createElement('img'); fitPageIcon.className = 'icons'; fitPageIcon.src = 'images/fit_to_page.png'; fitPageIcon.alt = 'FP'; 
+  btnFitPage.appendChild(fitPageIcon);
   centerGroup.appendChild(pageInput); centerGroup.appendChild(pageTotal); centerGroup.appendChild(btnZoomOut); centerGroup.appendChild(zoomVal); centerGroup.appendChild(btnZoomIn); centerGroup.appendChild(btnFitWidth); centerGroup.appendChild(btnFitPage);
 
   // right group
   const rightGroup = document.createElement('div');
   rightGroup.className = 'viewer-toolbar-group'; rightGroup.style.display = 'flex'; rightGroup.style.gap = '6px'; rightGroup.style.alignItems = 'center'; rightGroup.style.position = 'absolute'; rightGroup.style.right = '1vw'
-  const btnDownload = document.createElement('button'); btnDownload.className = 'viewer-tool-btn'; btnDownload.textContent = 'D'; btnDownload.title = 'Download';
-  const btnSvgMode = document.createElement('button'); btnSvgMode.className = 'viewer-tool-btn'; btnSvgMode.textContent = 'O'; btnSvgMode.title = 'Original'
-  const btnOverlayMode = document.createElement('button'); btnOverlayMode.className = 'viewer-tool-btn'; btnOverlayMode.textContent = 'フ'; btnOverlayMode.title = 'フォントを調整'
-  rightGroup.appendChild(btnDownload); rightGroup.appendChild(btnSvgMode); rightGroup.appendChild(btnOverlayMode);
+  const btnDownload = document.createElement('button'); btnDownload.className = 'viewer-tool-btn'; btnDownload.title = 'Download';
+  const DownloadIcon = document.createElement('img'); DownloadIcon.className = 'icons'; DownloadIcon.src = 'images/download.png'; DownloadIcon.alt = 'D'; 
+  btnDownload.appendChild(DownloadIcon);
+  const btnDarkmode = document.createElement('button'); btnDarkmode.className = 'viewer-tool-btn'; btnDarkmode.title = 'ダークモード化'
+  const DarkmodeIcon = document.createElement('img'); DarkmodeIcon.className = 'icons'; DarkmodeIcon.src = 'images/darkmode.png'; DarkmodeIcon.alt = 'D'; 
+  btnDarkmode.appendChild(DarkmodeIcon);
+  const btnAjustFont = document.createElement('button'); btnAjustFont.className = 'viewer-tool-btn'; btnAjustFont.title = 'フォントを調整'
+  const ajustFontIcon = document.createElement('img'); ajustFontIcon.className = 'icons'; ajustFontIcon.src = 'images/font.png'; ajustFontIcon.alt = 'フ'; 
+  btnAjustFont.appendChild(ajustFontIcon);
+  rightGroup.appendChild(btnDownload); rightGroup.appendChild(btnDarkmode); rightGroup.appendChild(btnAjustFont);
 
   toolbar.appendChild(leftGroup); toolbar.appendChild(centerGroup); toolbar.appendChild(rightGroup);
 
@@ -81,7 +91,7 @@ window.setupShell = function setupShell(origContainer) {
   window.__viewer_ui = {
     shell, toolbar, wrapper, pagesHolder,
     pageInput, btnZoomIn, btnZoomOut, zoomVal, btnFitWidth, btnFitPage,
-    btnDownload, btnSvgMode, btnOverlayMode //,btnPrev, btnNext
+    btnDownload, btnDarkmode, btnAjustFont //,btnPrev, btnNext
   };
 
   return window.__viewer_ui;
