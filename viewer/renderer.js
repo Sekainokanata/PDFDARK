@@ -51,7 +51,7 @@ window.pickForegroundForBackground = function pickForegroundForBackground(bgRgb)
   function srgbToLinearChannel(c) { const v = c / 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
   function relativeLuminance(rgb) { const R = srgbToLinearChannel(rgb.r), G = srgbToLinearChannel(rgb.g), B = srgbToLinearChannel(rgb.b); return 0.2126 * R + 0.7152 * G + 0.0722 * B; }
   const lum = relativeLuminance(bgRgb);
-  return lum > 0.5 ? '#1E1E1E' : '#E0E0E0';
+  return lum > 0.5 ? '#000000' : '#ffffff';
 };
 
 // 既存のスマート反転（簡略化しつつコピペ）。ここでは svg 内の文字など非彩色要素を黒背景に映える色へ置換
@@ -101,86 +101,13 @@ window.invertSvgColorsSmart = function invertSvgColorsSmart(svg, options = {}) {
       el.setAttribute('stroke', window.pickForegroundForBackground(strokeColor));
     }
   });
-  svg.style.background = '#1E1E1E';
+  svg.style.background = '#000';
 };
 
-// ハイライトの色変換サポート（バックアップ/復元/マッピング）
-window.__highlight_toggle_state = window.__highlight_toggle_state || { enabled: false };
-window.backupSvgColors = function backupSvgColors(svg) {
-  if (!svg) return; svg.querySelectorAll('*').forEach(el => { ['fill','stroke'].forEach(attr => { const v = el.getAttribute(attr); if (v !== null && v !== undefined) { if (!el.hasAttribute(`data-orig-${attr}`)) el.setAttribute(`data-orig-${attr}`, v); } }); });
-};
-window.restoreSvgColors = function restoreSvgColors(svg) { if (!svg) return 0; let restored=0; svg.querySelectorAll('*').forEach(el=>{ ['fill','stroke'].forEach(attr=>{ const orig=el.getAttribute(`data-orig-${attr}`); if (orig!==null && orig!==undefined){ el.setAttribute(attr, orig); restored++; } }); }); return restored; };
-window.restoreAllPagesHighlights = function restoreAllPagesHighlights(){ let total=0; document.querySelectorAll('.page').forEach(p=>{ const svg=p.querySelector('svg'); if(svg) total+=window.restoreSvgColors(svg); }); return total; };
-window.remapHighlightsInSvg = function remapHighlightsInSvg(svg, mapping, tolSq = 2500){
-  function parseColorToRgb(str){ if(!str) return null; str=String(str).trim(); if(str==='none'||str==='currentColor') return null; const hex=str.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i); if(hex){ let h=hex[1]; if(h.length===3) h=h.split('').map(c=>c+c).join(''); const n=parseInt(h,16); return {r:(n>>16)&255,g:(n>>8)&255,b:n&255,a:1}; } const m=str.match(/rgba?\(([^)]+)\)/); if(!m) return null; const parts=m[1].split(',').map(s=>parseFloat(s.trim())); return { r:parts[0], g:parts[1], b:parts[2], a: parts[3]!==undefined?parts[3]:1}; }
-  function colorDistanceSq(a,b){ if(!a||!b) return Infinity; const dr=a.r-b.r,dg=a.g-b.g,db=a.b-b.b; return dr*dr+dg*dg+db*db; }
-  if(!svg) return 0; let changed=0; const els=svg.querySelectorAll('*');
-  els.forEach(el=>{ const tag=el.tagName.toLowerCase(); if(tag==='image') return; ['fill','stroke'].forEach(attr=>{ let val=el.getAttribute(attr); let computed=null; if(!val||val==='inherit'||val==='currentColor'){ try{ computed=window.getComputedStyle(el)[attr]; }catch(e){computed=null;} }
-    const source=(val&&val!=='none')?val:computed; if(!source) return; const srcRgb=parseColorToRgb(source); if(!srcRgb) return;
-    for(const map of mapping){ const srcTarget=typeof map.src==='string'?parseColorToRgb(map.src):map.src; if(!srcTarget) continue; const d=colorDistanceSq(srcRgb, srcTarget); if(d<=tolSq){ const tgt=typeof map.target==='string'?parseColorToRgb(map.target):map.target; if(!tgt) continue; if(srcRgb.a!==undefined && srcRgb.a<1){ el.setAttribute(attr, `rgba(${tgt.r}, ${tgt.g}, ${tgt.b}, ${srcRgb.a})`); } else { el.setAttribute(attr, map.target); } changed++; break; } }
-  }); }); return changed; };
-
-window.ensureHighlightToggle = function ensureHighlightToggle(ui){
-  const HIGHLIGHT_MAPPING_DEFAULT = [ { src: '#ffff00', target: '#0000ff' }, { src: '#00ff00', target: '#0000ff' }, { src: '#00ffff', target: '#0000ff' } ];
-  const HIGHLIGHT_TOL_DEFAULT = 30;
-
-  if (!ui || !ui.toolbar) return;
-  if (!ui.btnHighlightToggle) {
-    const btn = document.createElement('button'); btn.className = 'viewer-tool-btn'; btn.title = 'ハイライト色を変換';
-    const highlightIcon = document.createElement('img'); highlightIcon.className = 'icons'; highlightIcon.src = 'images/hightlight.png'; highlightIcon.alt = 'ハ'; 
-    btn.appendChild(highlightIcon);
-    ui.toolbar.appendChild(btn); ui.btnHighlightToggle = btn;
-  } else if (ui.__highlight_toggle_handler) {
-    ui.btnHighlightToggle.removeEventListener('click', ui.__highlight_toggle_handler);
-  }
-
-  ui.__highlight_toggle_handler = function(){
-    const newState = !window.__highlight_toggle_state.enabled;
-    if (newState) { ui.btnHighlightToggle.classList.add('active'); ui.btnHighlightToggle.style.background = '#0a84ff'; }
-    else { ui.btnHighlightToggle.classList.remove('active'); ui.btnHighlightToggle.style.background = ''; }
-    try {
-      if (newState) {
-        document.querySelectorAll('.page').forEach(p => { const svg = p.querySelector('svg'); if (!svg) return; window.backupSvgColors(svg); window.remapHighlightsInSvg(svg, HIGHLIGHT_MAPPING_DEFAULT, Math.pow(HIGHLIGHT_TOL_DEFAULT,2)*3); });
-      } else {
-        window.restoreAllPagesHighlights();
-      }
-      window.__highlight_toggle_state.enabled = newState;
-    } catch(e){ console.error('Highlight toggle failed', e); }
-  };
-  ui.btnHighlightToggle.addEventListener('click', ui.__highlight_toggle_handler);
-  if (window.__highlight_toggle_state.enabled) { ui.btnHighlightToggle.classList.add('active'); ui.btnHighlightToggle.style.background = '#0a84ff'; }
-  else { ui.btnHighlightToggle.classList.remove('active'); ui.btnHighlightToggle.style.background = ''; }
-};
-
-// ハイライト有効時に、後から追加されるページへも自動適用
-window.setupHighlightObserver = function setupHighlightObserver(){
-  if (window.__highlight_observer_installed) return;
-  const pagesHolder = (window.__viewer_ui && window.__viewer_ui.pagesHolder) || document.getElementById('viewer-pages') || document.body;
-  if (!pagesHolder) return;
-  const HIGHLIGHT_MAPPING_DEFAULT = [ { src: '#ffff00', target: '#0000ff' }, { src: '#00ff00', target: '#0000ff' }, { src: '#00ffff', target: '#0000ff' } ];
-  const HIGHLIGHT_TOL_DEFAULT = 30;
-  const mo = new MutationObserver(muts => {
-    if (!window.__highlight_toggle_state.enabled) return;
-    muts.forEach(m => {
-      m.addedNodes && m.addedNodes.forEach(node => {
-        if (!(node instanceof HTMLElement)) return;
-        const svg = node.querySelector ? node.querySelector('svg') : null;
-        if (svg) {
-          try {
-            window.backupSvgColors(svg);
-            window.remapHighlightsInSvg(svg, HIGHLIGHT_MAPPING_DEFAULT, Math.pow(HIGHLIGHT_TOL_DEFAULT,2)*3);
-          } catch(e){ console.warn('highlight remap on added node failed', e); }
-        }
-      });
-    });
-  });
-  mo.observe(pagesHolder, { childList: true, subtree: true });
-  window.__highlight_observer_installed = true;
-};
 
 // テキストレイヤ（paper内に配置）
 window.renderTextLayerFromTextContent = function renderTextLayerFromTextContent(textContent, viewport, pageDiv, options = {}) {
-  options = Object.assign({ forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#E0E0E0', zIndex: 3000, allowCopy: false }, options);
+  options = Object.assign({ forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#fff', zIndex: 3000, allowCopy: false }, options);
   const paper = pageDiv.querySelector('.paper') || pageDiv; if (getComputedStyle(paper).position === 'static') paper.style.position = 'relative';
   // 既存の textLayer があれば除去（重複生成を防止）
   try { const existing = paper.querySelector('.textLayer'); if (existing) existing.remove(); } catch(_) {}
