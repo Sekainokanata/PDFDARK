@@ -21,6 +21,7 @@ html, body {
     align-items: center;
     gap: 8px;
     padding: 8px 0px;
+    height: 27px;
     /*background: linear-gradient(#121212, #161616);*/
     background: #121212;
     border-bottom: 1px solid rgba(255,255,255,0.04);
