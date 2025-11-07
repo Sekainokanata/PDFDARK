@@ -147,12 +147,18 @@ html, body {
   }
 }
 
-.aaaaa{
+.pageInput{
     border-radius: 0%;
+    height: 1.2rem;
+    width: 1.2rem;
+    padding: 0;
 }
 
 #zoom-value{
     border-radius: 0%;
+    width: 1.2rem;
+    height: 1.2rem;
+    padding: 0;
 }
 
 /* Chrome, Safari, Edge, Opera */
@@ -163,5 +169,14 @@ input::-webkit-inner-spin-button {
 }
 
 .icons{
-    height: 1.5rem;
+    height: 1.3rem;
+}
+
+.leftGroup{
+    font-size: 0.87rem;
+    font-weight: 500;
+    margin-inline-start: 16px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
