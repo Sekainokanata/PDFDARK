@@ -65,13 +65,17 @@ window.setupShell = function setupShell(origContainer) {
   const btnDownload = document.createElement('button'); btnDownload.className = 'viewer-tool-btn'; btnDownload.title = 'Download';
   const DownloadIcon = document.createElement('img'); DownloadIcon.className = 'icons'; DownloadIcon.src = 'images/download.png'; DownloadIcon.alt = 'D'; 
   btnDownload.appendChild(DownloadIcon);
+  // ハイライト変換トグルボタン（ui.jsで実装する要件）
+  const btnHighlightToggle = document.createElement('button'); btnHighlightToggle.className = 'viewer-tool-btn'; btnHighlightToggle.title = 'ハイライト色の変換/復元';
+  const highlightIcon = document.createElement('img'); highlightIcon.className = 'icons'; highlightIcon.src = 'images/hightlight.png'; highlightIcon.alt = 'HL';
+  btnHighlightToggle.appendChild(highlightIcon);
   const btnDarkmode = document.createElement('button'); btnDarkmode.className = 'viewer-tool-btn'; btnDarkmode.title = 'ダークモード化'
   const DarkmodeIcon = document.createElement('img'); DarkmodeIcon.className = 'icons'; DarkmodeIcon.src = 'images/darkmode.png'; DarkmodeIcon.alt = 'D'; 
   btnDarkmode.appendChild(DarkmodeIcon);
   const btnAjustFont = document.createElement('button'); btnAjustFont.className = 'viewer-tool-btn'; btnAjustFont.title = 'フォントを調整'
   const ajustFontIcon = document.createElement('img'); ajustFontIcon.className = 'icons'; ajustFontIcon.src = 'images/font.png'; ajustFontIcon.alt = 'フ'; 
   btnAjustFont.appendChild(ajustFontIcon);
-  rightGroup.appendChild(btnDownload); rightGroup.appendChild(btnDarkmode); rightGroup.appendChild(btnAjustFont);
+  rightGroup.appendChild(btnDownload); rightGroup.appendChild(btnHighlightToggle); rightGroup.appendChild(btnDarkmode); rightGroup.appendChild(btnAjustFont);
 
   toolbar.appendChild(leftGroup); toolbar.appendChild(centerGroup); toolbar.appendChild(rightGroup);
 
@@ -91,8 +95,130 @@ window.setupShell = function setupShell(origContainer) {
   window.__viewer_ui = {
     shell, toolbar, wrapper, pagesHolder,
     pageInput, btnZoomIn, btnZoomOut, zoomVal, btnFitWidth, btnFitPage,
-    btnDownload, btnDarkmode, btnAjustFont //,btnPrev, btnNext
+    btnDownload, btnHighlightToggle, btnDarkmode, btnAjustFont,
+    // 互換: 旧コード（toolbar.js）が参照する名称に合わせたエイリアス
+    get btnSvgMode(){ return btnDarkmode; },
+    get btnOverlayMode(){ return btnAjustFont; }
+    //,btnPrev, btnNext
   };
 
   return window.__viewer_ui;
+};
+
+// ========= ハイライト色トグル（ui.jsで実装） =========
+// 状態フラグ
+window.__viewer_highlightEnabled = false;
+
+// 色文字列 → {r,g,b,a} に解析
+function __parseColorToRgba(str){
+  if (!str) return null;
+  const s = String(str).trim();
+  const named = { yellow:[255,255,0,1], gold:[255,215,0,1], orange:[255,165,0,1] };
+  if (named[s]) { const [r,g,b,a]=named[s]; return {r,g,b,a}; }
+  if (s[0]==='#'){
+    let hex=s.slice(1);
+    if (hex.length===3){ const r=parseInt(hex[0]+hex[0],16), g=parseInt(hex[1]+hex[1],16), b=parseInt(hex[2]+hex[2],16); return {r,g,b,a:1}; }
+    if (hex.length>=6){ const r=parseInt(hex.slice(0,2),16), g=parseInt(hex.slice(2,4),16), b=parseInt(hex.slice(4,6),16); return {r,g,b,a:1}; }
+    return null;
+  }
+  const m = s.match(/^rgba?\(([^)]+)\)/i);
+  if (m){ const parts=m[1].split(',').map(x=>x.trim()); const r=parseFloat(parts[0]), g=parseFloat(parts[1]), b=parseFloat(parts[2]); const a=parts[3]!==undefined?parseFloat(parts[3]):1; if([r,g,b].every(v=>isFinite(v))) return { r:Math.max(0,Math.min(255,r)), g:Math.max(0,Math.min(255,g)), b:Math.max(0,Math.min(255,b)), a:isFinite(a)?Math.max(0,Math.min(1,a)):1}; }
+  return null;
+}
+
+function __looksLikeYellowHighlight(r,g,b){
+  const bright = (r+g+b)/3 >= 160;
+  const yellowish = (r>170 && g>170 && b<140) || (r>200 && g>180 && b<160);
+  return bright && yellowish;
+}
+
+function __mapToBlue(r,g,b){ return { r:30, g:144, b:255 }; }
+
+function __getElementFillColor(elem){
+  let fillAttr = elem.getAttribute && elem.getAttribute('fill');
+  if (fillAttr && fillAttr !== 'none') return __parseColorToRgba(fillAttr);
+  try { const cs = getComputedStyle(elem); if (cs && cs.fill && cs.fill !== 'none') return __parseColorToRgba(cs.fill); } catch(_) {}
+  return null;
+}
+
+// SVG内のハイライト色を青系へ変換
+window.remapHighlightsInSvg = function remapHighlightsInSvg(svg){
+  if (!svg) return 0;
+  const targets = svg.querySelectorAll('rect, path, polygon, text, tspan, polyline, ellipse, circle');
+  let changed = 0;
+  targets.forEach(el => {
+    const c = __getElementFillColor(el);
+    if (!c) return;
+    if (__looksLikeYellowHighlight(c.r,c.g,c.b)){
+      if (!el.hasAttribute('data-original-fill')){
+        const f = el.getAttribute('fill'); if (f) el.setAttribute('data-original-fill', f); else el.setAttribute('data-original-fill', 'none');
+        const fo = el.getAttribute('fill-opacity'); if (fo!==null) el.setAttribute('data-original-fill-opacity', fo);
+        const op = el.getAttribute('opacity'); if (op!==null) el.setAttribute('data-original-opacity', op);
+      }
+      const nb = __mapToBlue(c.r,c.g,c.b);
+      el.setAttribute('fill', `rgb(${nb.r}, ${nb.g}, ${nb.b})`);
+      if (!el.hasAttribute('data-original-fill-opacity')) el.setAttribute('fill-opacity', '0.6');
+      changed++;
+    }
+  });
+  return changed;
+};
+
+// すべてのページのSVGについて復元
+window.restoreAllPagesHighlights = function restoreAllPagesHighlights(){
+  const holder = (window.__viewer_ui && window.__viewer_ui.pagesHolder) || document.getElementById('viewer-pages') || document;
+  const svgs = holder.querySelectorAll('svg');
+  svgs.forEach(svg => {
+    const nodes = svg.querySelectorAll('[data-original-fill], [data-original-fill-opacity], [data-original-opacity]');
+    nodes.forEach(el => {
+      const of = el.getAttribute('data-original-fill');
+      if (of !== null){ if (of==='none') el.removeAttribute('fill'); else el.setAttribute('fill', of); el.removeAttribute('data-original-fill'); }
+      const ofo = el.getAttribute('data-original-fill-opacity'); if (ofo!==null){ if (ofo==='') el.removeAttribute('fill-opacity'); else el.setAttribute('fill-opacity', ofo); el.removeAttribute('data-original-fill-opacity'); }
+      const oop = el.getAttribute('data-original-opacity'); if (oop!==null){ if (oop==='') el.removeAttribute('opacity'); else el.setAttribute('opacity', oop); el.removeAttribute('data-original-opacity'); }
+    });
+  });
+};
+
+// ボタン配線
+window.ensureHighlightToggle = function ensureHighlightToggle(ui){
+  ui = ui || window.__viewer_ui; if (!ui || !ui.btnHighlightToggle) return;
+  if (ui.btnHighlightToggle.__wired) return;
+  const updateUi = () => { ui.btnHighlightToggle.style.background = window.__viewer_highlightEnabled ? '#0a84ff' : ''; };
+  ui.btnHighlightToggle.addEventListener('click', () => {
+    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
+    if (window.__viewer_highlightEnabled){
+      try {
+        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
+        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
+      } catch(_) {}
+    } else {
+      try { window.restoreAllPagesHighlights(); } catch(_) {}
+    }
+    updateUi();
+  });
+  updateUi();
+  ui.btnHighlightToggle.__wired = true;
+};
+
+// 新規ページにも自動適用
+window.setupHighlightObserver = function setupHighlightObserver(){
+  try {
+    const ui = window.__viewer_ui || {}; const holder = ui.pagesHolder || document.getElementById('viewer-pages'); if (!holder) return;
+    if (holder.__hlObserver) return;
+    const obs = new MutationObserver((mutList) => {
+      if (!window.__viewer_highlightEnabled) return;
+      for (const m of mutList){
+        m.addedNodes && m.addedNodes.forEach(node => {
+          try {
+            if (node && node.querySelector){
+              const svgs = node.matches && node.matches('svg') ? [node] : node.querySelectorAll ? node.querySelectorAll('svg') : [];
+              svgs && svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
+            }
+          } catch(_){}
+        });
+      }
+    });
+    obs.observe(holder, { childList: true, subtree: true });
+    holder.__hlObserver = obs;
+  } catch(_) {}
 };
