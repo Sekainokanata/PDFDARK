@@ -55,6 +55,8 @@ window.startViewer = async function startViewer(){
   // ハイライトトグルボタン追加 + 監視
   try { window.ensureHighlightToggle(ui); } catch(_) {}
   try { window.setupHighlightObserver(); } catch(_) {}
+  // ダークモードトグル（UI配線）
+  try { window.ensureDarkModeToggle(ui); } catch(_) {}
 
   const container = ui.pagesHolder;
 
@@ -128,15 +130,20 @@ window.startViewer = async function startViewer(){
         pageDiv.appendChild(footer);
         container.appendChild(pageDiv);
 
-        // ここから描画後の調整
-        window.invertSvgColorsSmart(svg, { satThreshold: 0.15 });
+        // ここから描画後の調整（ダークモードON時のみスマート反転）
+        if (window.__viewer_darkModeEnabled) {
+          window.invertSvgColorsSmart(svg, { satThreshold: 0.15 });
+        }
         if (hasText) {
           const wantForceVisible = (curMode === 'overlay');
-          window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: '#E0E0E0', allowCopy: allowCopy });
+          const overlayColor = window.__viewer_darkModeEnabled ? '#E0E0E0' : '#222222';
+          window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: overlayColor, allowCopy: allowCopy });
           if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
         }
-        await window.processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
-        try { console.log('ノーマル反転対象です'); } catch(_) {}
+        if (window.__viewer_darkModeEnabled) {
+          await window.processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
+          try { console.log('ノーマル反転対象です'); } catch(_) {}
+        }
       } else {
         // ML完了までDOMに追加しない
         try {
@@ -150,7 +157,8 @@ window.startViewer = async function startViewer(){
       }
       if (hasText) {
         const wantForceVisible = (curMode === 'overlay');
-        window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: '#E0E0E0', allowCopy: allowCopy });
+        const overlayColor2 = window.__viewer_darkModeEnabled ? '#E0E0E0' : '#222222';
+        window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: overlayColor2, allowCopy: allowCopy });
         if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
       }
 
@@ -162,6 +170,8 @@ window.startViewer = async function startViewer(){
   // 配線後に初期スケール/モードを適用
   try { window.__viewer_applyScaleToAllPages(1.0); } catch(_) {}
   try { window.__viewer_applyMode(curMode); } catch(_) {}
+  // 初期ダークモード状態適用（OFFなら何もしない/ONなら再適用）
+  try { if (typeof window.__viewer_applyDarkMode === 'function') window.__viewer_applyDarkMode(window.__viewer_darkModeEnabled); } catch(_) {}
 
   window.viewerCleanup = () => { if (removeCopyBlockers) removeCopyBlockers(); for (const v of window.objectUrlMap.values()) { if (v && v.url && v.url.startsWith('blob:')) URL.revokeObjectURL(v.url); } window.objectUrlMap.clear(); };
   window.viewerPdf = pdf;
