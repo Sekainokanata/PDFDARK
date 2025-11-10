@@ -25,6 +25,7 @@ window.startViewer = async function startViewer(){
 
   const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, cMapUrl: cMapUrlForExtension, cMapPacked: true, useWorkerFetch: true });
   const pdf = await loadingTask.promise;
+  window.viewerPdf = pdf;
 
   origContainer.innerHTML = '';
   const ui = window.setupShell(origContainer);
@@ -51,6 +52,8 @@ window.startViewer = async function startViewer(){
     // wrapper にだけ適用（ページ全体にはかけない）
     ui.wrapper.addEventListener('wheel', onWheel, { passive: false });
   } catch(_) {}
+
+  window.__viewer_ui.pageTotal.textContent = `/ ${pdf.numPages}`;
 
   // ハイライトトグルボタン追加 + 監視
   try { window.ensureHighlightToggle(ui); } catch(_) {}
