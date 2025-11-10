@@ -102,11 +102,26 @@ window.startViewer = async function startViewer(){
         }
       }
       
-      // SVG内にpath要素が存在するかチェック（テキストがpathとして埋め込まれている可能性）
+      // SVG内にpath要素が存在し、かつそれがテキスト用と思われるかチェック
+      // (g要素のtransform属性にマイナスのスケールがある場合、テキストの可能性が高い)
       const svgPathElems = svg.querySelectorAll('path');
-      const hasSvgPaths = svgPathElems.length > 0;
+      let hasSvgPaths = false;
+      if (svgPathElems.length > 0) {
+        // path要素の親g要素をチェック
+        for (const pathElem of svgPathElems) {
+          const parentG = pathElem.closest('g');
+          if (parentG) {
+            const transform = parentG.getAttribute('transform');
+            // matrix(a b c d e f)でc(y方向のスケール)が負の場合、テキストの可能性が高い
+            if (transform && /matrix\([^)]*-[\d.]+[^)]*\)/.test(transform)) {
+              hasSvgPaths = true;
+              break;
+            }
+          }
+        }
+      }
       
-      // テキストレイヤー、SVG内テキスト、またはSVG内pathのいずれかがあればSVG描画を使用
+      // テキストレイヤー、SVG内テキスト、またはテキスト用path要素のいずれかがあればSVG描画を使用
       const hasTextContent = !!(textContent && Array.isArray(textContent.items) && textContent.items.length > 0);
       const hasAnyText = hasTextContent || svgHasNonEmptyText || hasSvgPaths;
       // hasText はテキストの存在有無のみで判定（allowCopy はテキストレイヤの表示可否に使う）
