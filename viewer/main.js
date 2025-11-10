@@ -53,6 +53,7 @@ window.startViewer = async function startViewer(){
     ui.wrapper.addEventListener('wheel', onWheel, { passive: false });
   } catch(_) {}
 
+  //ページ数反映
   window.__viewer_ui.pageTotal.textContent = `/ ${pdf.numPages}`;
 
   // ハイライトトグルボタン追加 + 監視
