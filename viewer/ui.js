@@ -1,6 +1,8 @@
 // ui.js
 // UI シェル（ツールバー、ページホルダ）の作成と公開
 
+
+
 window.setupShell = function setupShell(origContainer) {
   const containerParent = origContainer.parentElement || document.body;
 
@@ -19,10 +21,13 @@ window.setupShell = function setupShell(origContainer) {
     boxShadow: '0 1px 0 rgba(60,60,60,0.02) inset', color: '#e6e6e6',
   });
 
+  const pagesHolder = document.createElement('div');
+  pagesHolder.id = 'viewer-pages';
+  pagesHolder.style.display = 'flex'; pagesHolder.style.flexDirection = 'column'; pagesHolder.style.gap = '3px'; pagesHolder.style.alignItems = 'center';
+
   //titleの部分
   const params = new URLSearchParams(location.search);
   const file = params.get('file');
-  console.log(file);
   let pdftitle;
   if (file) {
     try { const urlObj = new URL(file, location.href); const filename = urlObj.pathname.split('/').pop() || 'PDF'; pdftitle = decodeURIComponent(filename); }
@@ -46,18 +51,20 @@ window.setupShell = function setupShell(origContainer) {
   const centerGroup = document.createElement('div');
   centerGroup.className = 'viewer-toolbar-group'; centerGroup.style.display = 'flex'; centerGroup.style.margin = '0 auto'; centerGroup.style.gap = '6px'; centerGroup.style.alignItems = 'center'; centerGroup.style.background = '#3C3C3C'; centerGroup.style.zIndex = '1';
   const pageInput = document.createElement('input'); pageInput.type = 'number'; pageInput.min = 1; pageInput.value = 1; pageInput.style.width = '20px'; pageInput.className = 'viewer-tool-btn pageInput'; pageInput.style.background = '#1E1E1E'; pageInput.style.textAlign = 'center'; pageInput.style.border = 'none'
-  const pageTotal = document.createElement('div'); pageTotal.textContent = `/ ${2}`;
+  const pageTotal = document.createElement('div');
+  const verticalSeparator1 = document.createElement('span'); verticalSeparator1.className = 'vertical-separator'
   const btnZoomOut = document.createElement('button'); btnZoomOut.className = 'viewer-tool-btn'; btnZoomOut.textContent = '-';
   //zoomの数字について画面の横幅一定以下で取消
   const zoomVal = document.createElement('input'); zoomVal.id = 'zoom-value'; zoomVal.value = '100%'; zoomVal.style.background = '#1E1E1E';
   const btnZoomIn = document.createElement('button'); btnZoomIn.className = 'viewer-tool-btn'; btnZoomIn.textContent = '+';
+  const verticalSeparator2 = document.createElement('span'); verticalSeparator2.className = 'vertical-separator'
   const btnFitWidth = document.createElement('button'); btnFitWidth.className = 'viewer-tool-btn'; btnFitWidth.title = 'ページの横幅に合わせる'
   const fitWidthIcon = document.createElement('img'); fitWidthIcon.className = 'icons'; fitWidthIcon.src = 'images/fit_to_width.png'; fitWidthIcon.alt = 'FW'; 
   btnFitWidth.appendChild(fitWidthIcon);
   const btnFitPage = document.createElement('button'); btnFitPage.className = 'viewer-tool-btn'; btnFitPage.title = 'ページの高さに合わせる'
   const fitPageIcon = document.createElement('img'); fitPageIcon.className = 'icons'; fitPageIcon.src = 'images/fit_to_page.png'; fitPageIcon.alt = 'FP'; 
   btnFitPage.appendChild(fitPageIcon);
-  centerGroup.appendChild(pageInput); centerGroup.appendChild(pageTotal); centerGroup.appendChild(btnZoomOut); centerGroup.appendChild(zoomVal); centerGroup.appendChild(btnZoomIn); centerGroup.appendChild(btnFitWidth); centerGroup.appendChild(btnFitPage);
+  centerGroup.appendChild(pageInput); centerGroup.appendChild(pageTotal); centerGroup.appendChild(verticalSeparator1); centerGroup.appendChild(btnZoomOut); centerGroup.appendChild(zoomVal); centerGroup.appendChild(btnZoomIn); centerGroup.appendChild(verticalSeparator2); centerGroup.appendChild(btnFitWidth); centerGroup.appendChild(btnFitPage);
 
   // right group
   const rightGroup = document.createElement('div');
@@ -99,7 +106,7 @@ window.setupShell = function setupShell(origContainer) {
   containerParent.replaceChild(shell, origContainer);
 
   window.__viewer_ui = {
-    shell, toolbar, wrapper, pagesHolder,
+    shell, toolbar, wrapper, pagesHolder, pageTotal,
     pageInput, btnZoomIn, btnZoomOut, zoomVal, btnFitWidth, btnFitPage,
     btnDownload, btnHighlightToggle, btnDarkmode, btnAjustFont,
     // 互換: 旧コード（toolbar.js）が参照する名称に合わせたエイリアス
