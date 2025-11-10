@@ -1,6 +1,7 @@
 // main.js
 // 旧 viewer.js のエントリーポイント（startViewer）を分離
 
+
 window.startViewer = async function startViewer(){
   // pdf.worker.js / cmaps のパスを拡張内の URL で設定
   try { pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('pdfjs/pdf.worker.js'); } catch(_) {}
@@ -68,13 +69,6 @@ window.startViewer = async function startViewer(){
   let removeCopyBlockers = null;
   if (!allowCopy) {
     removeCopyBlockers = window.installCopyBlockers(container);
-    const warn = document.createElement('div');
-    warn.textContent = 'このPDFはコピーが制限されています — コピーは無効化します。';
-    warn.style.color = '#ffcc00'; warn.style.padding = '6px'; warn.style.fontSize = '13px';
-    // ツールバー先頭に警告を表示
-    if (ui && ui.toolbar) {
-      ui.toolbar.insertBefore(warn, ui.toolbar.firstChild);
-    }
   }
 
   const curMode = (function(){ try { return localStorage.getItem('viewerTextMode') || 'svg'; } catch(_) { return 'svg'; } })();
@@ -92,20 +86,51 @@ window.startViewer = async function startViewer(){
       // まずテキスト有無を判定
       let textContent = null; try { textContent = await page.getTextContent(); } catch(e){ console.warn('getTextContent failed for page', p, e); }
       function looksGoodTextContent(tc){ if (!tc || !tc.items || tc.items.length === 0) return false; const sample = tc.items.slice(0, 20).map(i => i.str).join(''); return /[0-9A-Za-z\u3000-\u30FF\u4E00-\u9E0E0E0]/.test(sample); }
-      // SVG内のtext/tspanのうち、空白以外の文字があるかを確認
+      
+      // SVG内のtext/tspanのうち、空白以外の文字があり、かつ0x0でないものを確認
       const svgTextElems = svg.querySelectorAll('text, tspan');
       let svgHasNonEmptyText = false;
       for (const n of svgTextElems) {
         const txt = (n.textContent || '').replace(/\s+/g, '');
-        if (txt.length > 0) { svgHasNonEmptyText = true; break; }
+        if (txt.length > 0) {
+          // svg:textが0x0サイズでないかチェック
+          if (n.tagName.toLowerCase().includes('text')) {
+            const bbox = n.getBBox ? n.getBBox() : null;
+            if (bbox && bbox.width === 0 && bbox.height === 0) {
+              continue; // 0x0のtext要素はスキップ
+            }
+          }
+          svgHasNonEmptyText = true;
+          break;
+        }
       }
-      // tspanが存在しても全て空なら「テキスト無し」扱い
-      const svgTspanAllEmpty = (svg.querySelectorAll('tspan').length > 0) && !svgHasNonEmptyText;
-      let hasAnyText = !!(textContent && Array.isArray(textContent.items) && textContent.items.length > 0) || svgHasNonEmptyText;
-      if (svgTspanAllEmpty) { hasAnyText = false; }
-      const hasText = allowCopy && looksGoodTextContent(textContent);
+      
+      // SVG内にpath要素が存在し、かつそれがテキスト用と思われるかチェック
+      // (g要素のtransform属性にマイナスのスケールがある場合、テキストの可能性が高い)
+      const svgPathElems = svg.querySelectorAll('path');
+      let hasSvgPaths = false;
+      if (svgPathElems.length > 0) {
+        // path要素の親g要素をチェック
+        for (const pathElem of svgPathElems) {
+          const parentG = pathElem.closest('g');
+          if (parentG) {
+            const transform = parentG.getAttribute('transform');
+            // matrix(a b c d e f)でc(y方向のスケール)が負の場合、テキストの可能性が高い
+            if (transform && /matrix\([^)]*-[\d.]+[^)]*\)/.test(transform)) {
+              hasSvgPaths = true;
+              break;
+            }
+          }
+        }
+      }
+      
+      // テキストレイヤー、SVG内テキスト、またはテキスト用path要素のいずれかがあればSVG描画を使用
+      const hasTextContent = !!(textContent && Array.isArray(textContent.items) && textContent.items.length > 0);
+      const hasAnyText = hasTextContent || svgHasNonEmptyText || hasSvgPaths;
+      // hasText はテキストの存在有無のみで判定（allowCopy はテキストレイヤの表示可否に使う）
+      const hasText = looksGoodTextContent(textContent);
 
-      // ページ要素をこの時点で用意（テキスト無しページは後で追加）
+      // ページ要素をこの時点で用意
       const pageDiv = document.createElement('div');
       pageDiv.className = 'page';
       pageDiv.setAttribute('data-base-width', viewport.width);
@@ -120,6 +145,7 @@ window.startViewer = async function startViewer(){
       paper.style.transformOrigin = '0 0';
       const footer = document.createElement('div'); footer.className = 'page-footer'; footer.textContent = `Page ${p} / ${pdf.numPages}`;
 
+      // 常にSVG描画を使用（allowCopy=false でもベクター表示を維持）
       if (hasAnyText) {
         // 即時描画
         try {
@@ -137,7 +163,8 @@ window.startViewer = async function startViewer(){
         if (window.__viewer_darkModeEnabled) {
           window.invertSvgColorsSmart(svg, { satThreshold: 0.15 });
         }
-        if (hasText) {
+        // テキストレイヤ: textContent があれば常に生成（allowCopy=false でもオーバーレイモードのため必要）
+        if (textContent && textContent.items && textContent.items.length > 0) {
           const wantForceVisible = (curMode === 'overlay');
           const overlayColor = window.__viewer_darkModeEnabled ? '#E0E0E0' : '#222222';
           window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: overlayColor, allowCopy: allowCopy });
@@ -147,7 +174,7 @@ window.startViewer = async function startViewer(){
           await window.processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
           try { console.log('ノーマル反転対象です'); } catch(_) {}
         }
-      } else {
+              } else {
         // ML完了までDOMに追加しない
         try {
           await window.convertPageToPng(page, viewport, paper);
