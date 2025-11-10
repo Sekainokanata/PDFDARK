@@ -169,9 +169,17 @@ function __parseColorToRgba(str){
 var colorflag = 0;
 
 function __looksLikeHighlight(r,g,b){
-  const bright = (r+g+b)/3 >= 160;
-  const yellowish = (r>170 && g>170 && b<140) || (r>200 && g>180 && b<160);
-  return bright && yellowish;
+  //const bright = (r+g+b)/3 >= 160;
+  //const yellowish = (r>170 && g>170 && b<140) || (r>200 && g>180 && b<160);
+  const yellowish = (r>240 && g>240 && b<15);
+  const lightgreenwish = (r<15 && g>240 && b<15);
+  const skybluewish = (r<15 && g>240 && b>240);
+  const pinkwish = (r>240 && g<15 && b>240);
+  const redwish = (r>240 && g<15 && b<15);
+  const bluewish = (r<15 && g<15 && b>240);
+  const greenwish = (r<15 && g>120 && g<136 && b<15);
+  const purplewish = (r>120 && r<136 && g<15 && b>120 && b<136);
+  return (yellowish || lightgreenwish || skybluewish || pinkwish || redwish || bluewish || greenwish || purplewish);
 }
 
 function __mapToBlue(r,g,b){
@@ -195,7 +203,8 @@ function __getElementFillColor(elem){
 // SVG内のハイライト色を変換
 window.remapHighlightsInSvg = function remapHighlightsInSvg(svg){
   if (!svg) return 0;
-  const targets = svg.querySelectorAll('rect, path, polygon, text, tspan, polyline, ellipse, circle');
+  //const targets = svg.querySelectorAll('rect, path, polygon, text, tspan, polyline, ellipse, circle');
+  const targets = svg.querySelectorAll('path');
   let changed = 0;
   targets.forEach(el => {
     const c = __getElementFillColor(el);
