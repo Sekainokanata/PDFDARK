@@ -186,3 +186,63 @@ input::-webkit-inner-spin-button {
     height: 20px;
     background-color: rgba(255, 255, 255, 0.3);
 }
+
+/* メニューコンテナの基本スタイル */
+.menu-container {
+    /* 1. 最初は非表示にする */
+    display: none;
+    position: fixed;
+    right: 0px;
+    top: 46px;
+    gap: 15px; /* 各項目の間隔 */
+    padding: 10px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+}
+
+/* 3. JavaScriptによってこのクラスが追加されると表示される */
+.menu-container.show {
+    display: flex;
+}
+
+#highlighticon{
+    background-color: aqua;
+}
+
+#highlighticon.red{
+    background-color: red;
+}
+
+#highlighticon.blue{
+    background-color: blue;
+}
+
+#highlighticon.grenn{
+    background-color: grenn;
+}
+
+#highlighticon.yellow{
+    background-color: yellow;
+}
+
+.btnHighlight{
+    height: 1rem;
+    width: 1rem;
+}
+
+#redHighlight{
+    background-color: red;
+}
+
+#blueHighlight{
+    background-color: blue;
+}
+
+#greenHighlight{
+    background-color: green;
+}
+
+#yellowHighlight{
+    background-color: yellow;
+}

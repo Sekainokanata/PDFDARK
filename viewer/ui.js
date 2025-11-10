@@ -68,16 +68,36 @@ window.setupShell = function setupShell(origContainer) {
   const btnDownload = document.createElement('button'); btnDownload.className = 'viewer-tool-btn'; btnDownload.title = 'Download';
   const DownloadIcon = document.createElement('img'); DownloadIcon.className = 'icons'; DownloadIcon.src = 'images/download.png'; DownloadIcon.alt = 'D'; 
   btnDownload.appendChild(DownloadIcon);
-  // ハイライト変換トグルボタン（ui.jsで実装する要件）
+  // darkmode
   const btnDarkmode = document.createElement('button'); btnDarkmode.className = 'viewer-tool-btn'; btnDarkmode.title = 'ダークモード化'
   const DarkmodeIcon = document.createElement('img'); DarkmodeIcon.className = 'icons'; DarkmodeIcon.src = 'images/darkmode.png'; DarkmodeIcon.alt = 'D'; 
   btnDarkmode.appendChild(DarkmodeIcon);
+  //ajustFont
   const btnAjustFont = document.createElement('button'); btnAjustFont.className = 'viewer-tool-btn'; btnAjustFont.title = 'フォントを調整'
   const ajustFontIcon = document.createElement('img'); ajustFontIcon.className = 'icons'; ajustFontIcon.src = 'images/font.png'; ajustFontIcon.alt = 'フ'; 
   btnAjustFont.appendChild(ajustFontIcon);
-  const btnHighlightToggle = document.createElement('button'); btnHighlightToggle.className = 'viewer-tool-btn'; btnHighlightToggle.title = 'ハイライト色の変換/復元';
-  const highlightIcon = document.createElement('img'); highlightIcon.className = 'icons'; highlightIcon.src = 'images/hightlight.png'; highlightIcon.alt = 'HL';
+  //highlight
+  const btnHighlightToggle = document.createElement('button');btnHighlightToggle.id = 'menuToggleButton';  btnHighlightToggle.className = 'viewer-tool-btn'; btnHighlightToggle.title = 'ハイライト色の変換/復元';
+  const highlightIcon = document.createElement('img'); highlightIcon.className = 'icons';highlightIcon.id = 'highlighticon'; highlightIcon.src = 'images/highlight.png'; highlightIcon.alt = 'HL';
   btnHighlightToggle.appendChild(highlightIcon);
+  const highlightMenu = document.createElement('nav'); highlightMenu.id = 'menuNavigation';highlightMenu.className = 'menu-container' ; const redHighlight = document.createElement('button'); const blueHighlight = document.createElement('button'); const greenHighlight = document.createElement('button'); const yellowHighlight = document.createElement('button');
+  redHighlight.id = 'redHighlight';redHighlight.className = 'btnHighlight';blueHighlight.id = 'blueHighlight';blueHighlight.className = 'btnHighlight';greenHighlight.id = 'greenHighlight';greenHighlight.className = 'btnHighlight';yellowHighlight.id = 'yellowHighlight';yellowHighlight.className = 'btnHighlight';
+  highlightMenu.appendChild(redHighlight); highlightMenu.appendChild(blueHighlight); highlightMenu.appendChild(greenHighlight); highlightMenu.appendChild(yellowHighlight);
+  //メニューの出力
+  highlightIcon.addEventListener('click', () => {
+    highlightMenu.classList.toggle('show');
+  });
+  //red
+  redHighlight.addEventListener('click', () => {highlightIcon.classList.add('red');highlightIcon.classList.remove('blue');highlightIcon.classList.remove('green');highlightIcon.classList.remove('yellow');})
+  //blue
+  blueHighlight.addEventListener('click', () => {highlightIcon.classList.add('blue');highlightIcon.classList.remove('red');highlightIcon.classList.remove('green');highlightIcon.classList.remove('yellow');})
+  //blue
+  greenHighlight.addEventListener('click', () => {highlightIcon.classList.add('green');highlightIcon.classList.remove('red');highlightIcon.classList.remove('blue');highlightIcon.classList.remove('yellow');})
+  //blue
+  yellowHighlight.addEventListener('click', () => {highlightIcon.classList.add('yellow');highlightIcon.classList.remove('red');highlightIcon.classList.remove('blue');highlightIcon.classList.remove('green');})
+
+  btnHighlightToggle.appendChild(highlightMenu);
+
   rightGroup.appendChild(btnDownload); rightGroup.appendChild(btnDarkmode); rightGroup.appendChild(btnAjustFont);  rightGroup.appendChild(btnHighlightToggle);
 
   toolbar.appendChild(leftGroup); toolbar.appendChild(centerGroup); toolbar.appendChild(rightGroup);
@@ -98,7 +118,7 @@ window.setupShell = function setupShell(origContainer) {
   window.__viewer_ui = {
     shell, toolbar, wrapper, pagesHolder,
     pageInput, btnZoomIn, btnZoomOut, zoomVal, btnFitWidth, btnFitPage,
-    btnDownload, btnHighlightToggle, btnDarkmode, btnAjustFont,
+    btnDownload, btnHighlightToggle, btnDarkmode, btnAjustFont, redHighlight, blueHighlight, greenHighlight, yellowHighlight,
     // 互換: 旧コード（toolbar.js）が参照する名称に合わせたエイリアス
     get btnSvgMode(){ return btnDarkmode; },
     get btnOverlayMode(){ return btnAjustFont; }
@@ -184,10 +204,10 @@ window.restoreAllPagesHighlights = function restoreAllPagesHighlights(){
 
 // ボタン配線
 window.ensureHighlightToggle = function ensureHighlightToggle(ui){
-  ui = ui || window.__viewer_ui; if (!ui || !ui.btnHighlightToggle) return;
-  if (ui.btnHighlightToggle.__wired) return;
-  const updateUi = () => { ui.btnHighlightToggle.style.background = window.__viewer_highlightEnabled ? '#0a84ff' : ''; };
-  ui.btnHighlightToggle.addEventListener('click', () => {
+  ui = ui || window.__viewer_ui; if (!ui || !ui.redHighlight) return;
+  if (ui.redHighlight.__wired) return;
+  const updateUi = () => { ui.redHighlight.style.background = window.__viewer_highlightEnabled ? '#0a84ff' : ''; };
+  ui.redHighlight.addEventListener('click', () => {
     window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
     if (window.__viewer_highlightEnabled){
       try {
