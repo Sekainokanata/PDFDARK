@@ -21,10 +21,6 @@ window.setupShell = function setupShell(origContainer) {
     boxShadow: '0 1px 0 rgba(60,60,60,0.02) inset', color: '#e6e6e6',
   });
 
-  const pagesHolder = document.createElement('div');
-  pagesHolder.id = 'viewer-pages';
-  pagesHolder.style.display = 'flex'; pagesHolder.style.flexDirection = 'column'; pagesHolder.style.gap = '3px'; pagesHolder.style.alignItems = 'center';
-
   //titleの部分
   const params = new URLSearchParams(location.search);
   const file = params.get('file');
