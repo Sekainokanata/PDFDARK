@@ -83,16 +83,32 @@ window.startViewer = async function startViewer(){
       // まずテキスト有無を判定
       let textContent = null; try { textContent = await page.getTextContent(); } catch(e){ console.warn('getTextContent failed for page', p, e); }
       function looksGoodTextContent(tc){ if (!tc || !tc.items || tc.items.length === 0) return false; const sample = tc.items.slice(0, 20).map(i => i.str).join(''); return /[0-9A-Za-z\u3000-\u30FF\u4E00-\u9E0E0E0]/.test(sample); }
-      // SVG内のtext/tspanのうち、空白以外の文字があるかを確認
+      
+      // SVG内のtext/tspanのうち、空白以外の文字があり、かつ0x0でないものを確認
       const svgTextElems = svg.querySelectorAll('text, tspan');
       let svgHasNonEmptyText = false;
       for (const n of svgTextElems) {
         const txt = (n.textContent || '').replace(/\s+/g, '');
-        if (txt.length > 0) { svgHasNonEmptyText = true; break; }
+        if (txt.length > 0) {
+          // svg:textが0x0サイズでないかチェック
+          if (n.tagName.toLowerCase().includes('text')) {
+            const bbox = n.getBBox ? n.getBBox() : null;
+            if (bbox && bbox.width === 0 && bbox.height === 0) {
+              continue; // 0x0のtext要素はスキップ
+            }
+          }
+          svgHasNonEmptyText = true;
+          break;
+        }
       }
-      // テキストレイヤーとSVG内テキストのいずれかにテキストがあればSVG描画を使用
+      
+      // SVG内にpath要素が存在するかチェック（テキストがpathとして埋め込まれている可能性）
+      const svgPathElems = svg.querySelectorAll('path');
+      const hasSvgPaths = svgPathElems.length > 0;
+      
+      // テキストレイヤー、SVG内テキスト、またはSVG内pathのいずれかがあればSVG描画を使用
       const hasTextContent = !!(textContent && Array.isArray(textContent.items) && textContent.items.length > 0);
-      const hasAnyText = hasTextContent || svgHasNonEmptyText;
+      const hasAnyText = hasTextContent || svgHasNonEmptyText || hasSvgPaths;
       // hasText はテキストの存在有無のみで判定（allowCopy はテキストレイヤの表示可否に使う）
       const hasText = looksGoodTextContent(textContent);
 
@@ -112,7 +128,7 @@ window.startViewer = async function startViewer(){
       const footer = document.createElement('div'); footer.className = 'page-footer'; footer.textContent = `Page ${p} / ${pdf.numPages}`;
 
       // 常にSVG描画を使用（allowCopy=false でもベクター表示を維持）
-      if (true) {
+      if (hasAnyText) {
         // 即時描画
         try {
           svg.style.width = viewport.width + 'px';
