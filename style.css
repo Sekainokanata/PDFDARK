@@ -21,6 +21,7 @@ html, body {
     align-items: center;
     gap: 8px;
     padding: 8px 0px;
+    height: 27px;
     /*background: linear-gradient(#121212, #161616);*/
     background: #121212;
     border-bottom: 1px solid rgba(255,255,255,0.04);
@@ -146,12 +147,18 @@ html, body {
   }
 }
 
-.aaaaa{
+.pageInput{
     border-radius: 0%;
+    height: 1.2rem;
+    width: 1.2rem;
+    padding: 0;
 }
 
 #zoom-value{
     border-radius: 0%;
+    width: 1.2rem;
+    height: 1.2rem;
+    padding: 0;
 }
 
 /* Chrome, Safari, Edge, Opera */
@@ -162,5 +169,110 @@ input::-webkit-inner-spin-button {
 }
 
 .icons{
-    height: 1.5rem;
+    height: 1.3rem;
+}
+
+.leftGroup{
+    font-size: 0.87rem;
+    font-weight: 500;
+    margin-inline-start: 16px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vertical-separator{
+    width: 1px;
+    height: 20px;
+    background-color: rgba(255, 255, 255, 0.3);
+}
+
+/* メニューコンテナの基本スタイル */
+.menu-container {
+    /* 1. 最初は非表示にする */
+    display: none;
+    position: fixed;
+    right: 0px;
+    top: 46px;
+    gap: 15px; /* 各項目の間隔 */
+    padding: 10px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+}
+
+/* 3. JavaScriptによってこのクラスが追加されると表示される */
+.menu-container.show {
+    display: flex;
+}
+
+#highlighticon.yellow{
+    background-color: #FFFF00;
+}
+
+#highlighticon.lightgreen{
+    background-color: #00FF00;
+}
+
+#highlighticon.skyblue{
+    background-color: #00FFFF;
+}
+
+#highlighticon.pink{
+    background-color: #FF00FF;
+}
+
+#highlighticon.red{
+    background-color: #FF0000;
+}
+
+#highlighticon.blue{
+    background-color: #0000FF;
+}
+
+#highlighticon.green{
+    background-color: #008000;
+}
+
+#highlighticon.purple{
+    background-color: #800080;
+}
+
+.btnHighlight{
+    height: 1rem;
+    width: 1rem;
+    border: none;
+}
+
+#yellowHighlight{
+    background-color: rgb(255, 255, 0);
+}
+
+#lightgreenHighlight{
+    background-color: rgb(0, 255, 0);
+}
+
+#skyblueHighlight{
+    background-color: rgb(0, 255, 255);
+}
+
+#pinkHighlight{
+    background-color: rgb(255, 0, 255);
+}
+
+#redHighlight{
+    background-color: rgb(255, 0, 0);
+}
+
+#blueHighlight{
+    background-color: rgb(0, 0, 255);
+}
+
+#greenHighlight{
+    background-color: rgb(0, 128, 0);
+}
+
+#purpleHighlight{
+    background-color: rgb(128, 0, 128)
+;
 }
