@@ -35,6 +35,8 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   const ui = window.__viewer_ui; if (!ui) return;
   let currentScale = 1.0;
   function applyScaleToAllPages(scale){
+    // 目標スケールを適用した後、横スクロール位置を中央に調整する
+    const wrapper = ui.wrapper;
     const pages = ui.pagesHolder.querySelectorAll('.page');
     pages.forEach(pageDiv => {
       const baseW = parseFloat(pageDiv.getAttribute('data-base-width') || pageDiv.style.width || pageDiv.clientWidth) || 0;
@@ -50,6 +52,18 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
       }
     });
     currentScale = scale; ui.zoomVal.value = Math.round(scale * 100) + '%';
+
+    // レイアウト反映後に中央へスクロール（横方向）
+    if (wrapper) {
+      const centerHorizontally = () => {
+        try {
+          const maxLeft = Math.max(0, wrapper.scrollWidth - wrapper.clientWidth);
+          wrapper.scrollLeft = Math.round(maxLeft / 2);
+        } catch(_) {}
+      };
+      // レイアウト計算が終わるタイミングで反映
+      requestAnimationFrame(() => requestAnimationFrame(centerHorizontally));
+    }
   }
   function fitWidth(){ const viewportWidth = ui.wrapper.clientWidth - 40; const first = ui.pagesHolder.querySelector('.page'); if (!first) return; const baseW = parseFloat(first.getAttribute('data-base-width') || first.style.width || first.clientWidth); const targetScale = Math.max(0.1, viewportWidth / baseW); applyScaleToAllPages(targetScale); }
   function fitPage(){ const viewportHeight = ui.wrapper.clientHeight - ui.toolbar.clientHeight - 40; const first = ui.pagesHolder.querySelector('.page'); if (!first) return; const baseH = parseFloat(first.getAttribute('data-base-height') || first.style.height || first.clientHeight); const targetScale = Math.max(0.1, viewportHeight / baseH); applyScaleToAllPages(targetScale); }
@@ -67,7 +81,11 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   const STORAGE_KEY = 'viewerTextMode';
   function saveMode(m){ try { localStorage.setItem(STORAGE_KEY, m); } catch(_) {} }
   function loadMode(){ try { return localStorage.getItem(STORAGE_KEY) || 'svg'; } catch(_) { return 'svg'; } }
-  function updateButtons(mode){ if (mode === 'overlay') { ui.btnAjustFont.style.background = '#0a84ff'; ui.btnDarkmode.style.background = ''; } else { ui.btnDarkmode.style.background = '#0a84ff'; ui.btnAjustFont.style.background = ''; } }
+  function updateButtons(mode){
+    // フォント調整（overlay）ON時のみ青表示。ダークモードボタンはここでは変更しない。
+    if (mode === 'overlay') { ui.btnAjustFont.style.background = '#0a84ff'; }
+    else { ui.btnAjustFont.style.background = ''; }
+  }
   function applyModeToAllPages(mode){
     const pages = ui.pagesHolder.querySelectorAll('.page');
     pages.forEach(pageDiv => {
@@ -77,7 +95,8 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
         if (textLayer) { textLayer.querySelectorAll('span').forEach(s => { s.style.color = 'transparent'; s.style.WebkitTextFillColor = 'transparent'; s.style.pointerEvents = 'none'; s.style.userSelect = 'none'; s.setAttribute('aria-hidden', 'true'); }); textLayer.style.pointerEvents = 'none'; textLayer.style.userSelect = 'none'; }
       } else {
         if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; t.style.pointerEvents = 'none'; t.style.userSelect = 'none'; }); svgElem.style.pointerEvents = 'none'; svgElem.style.userSelect = 'none'; }
-        if (textLayer) { textLayer.querySelectorAll('span').forEach(s => { s.style.color = '#e0e0e0'; s.style.WebkitTextFillColor = '#e0e0e0'; s.style.pointerEvents = 'auto'; s.style.userSelect = 'text'; s.removeAttribute('aria-hidden'); }); textLayer.style.pointerEvents = 'auto'; textLayer.style.userSelect = 'text'; textLayer.style.zIndex = '3000'; }
+        const overlayColor = (window.__viewer_darkModeEnabled ? '#e0e0e0' : '#222222');
+        if (textLayer) { textLayer.querySelectorAll('span').forEach(s => { s.style.color = overlayColor; s.style.WebkitTextFillColor = overlayColor; s.style.pointerEvents = 'auto'; s.style.userSelect = 'text'; s.removeAttribute('aria-hidden'); }); textLayer.style.pointerEvents = 'auto'; textLayer.style.userSelect = 'text'; textLayer.style.zIndex = '3000'; }
       }
     });
     try { localStorage.setItem('viewerTextMode', mode); } catch(_) {}
@@ -85,8 +104,15 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   }
 
   const initialMode = loadMode(); updateButtons(initialMode); applyModeToAllPages(initialMode);
-  ui.btnDarkmode.addEventListener('click', () => { saveMode('svg'); updateButtons('svg'); applyModeToAllPages('svg'); });
-  ui.btnAjustFont.addEventListener('click', () => { saveMode('overlay'); updateButtons('overlay'); applyModeToAllPages('overlay'); });
+  // ダークモードボタンは ui.ensureDarkModeToggle 側で配線済み。ここでは何もしない。
+  // フォント調整ボタンをトグル式に（overlay <-> svg）
+  ui.btnAjustFont.addEventListener('click', () => {
+    const cur = loadMode();
+    const next = (cur === 'overlay') ? 'svg' : 'overlay';
+    saveMode(next);
+    updateButtons(next);
+    applyModeToAllPages(next);
+  });
 
   window.__viewer_applyScaleToAllPages = applyScaleToAllPages;
   window.__viewer_goToPage = function(n){ goToPage(n); };
