@@ -80,22 +80,39 @@ window.setupShell = function setupShell(origContainer) {
   const btnHighlightToggle = document.createElement('button');btnHighlightToggle.id = 'menuToggleButton';  btnHighlightToggle.className = 'viewer-tool-btn'; btnHighlightToggle.title = 'ハイライト色の変換/復元';
   const highlightIcon = document.createElement('img'); highlightIcon.className = 'icons';highlightIcon.id = 'highlighticon'; highlightIcon.src = 'images/highlight.png'; highlightIcon.alt = 'HL';
   btnHighlightToggle.appendChild(highlightIcon);
-  const highlightMenu = document.createElement('nav'); highlightMenu.id = 'menuNavigation';highlightMenu.className = 'menu-container' ; const redHighlight = document.createElement('button'); const blueHighlight = document.createElement('button'); const greenHighlight = document.createElement('button'); const yellowHighlight = document.createElement('button');
-  redHighlight.id = 'redHighlight';redHighlight.className = 'btnHighlight';blueHighlight.id = 'blueHighlight';blueHighlight.className = 'btnHighlight';greenHighlight.id = 'greenHighlight';greenHighlight.className = 'btnHighlight';yellowHighlight.id = 'yellowHighlight';yellowHighlight.className = 'btnHighlight';
-  highlightMenu.appendChild(redHighlight); highlightMenu.appendChild(blueHighlight); highlightMenu.appendChild(greenHighlight); highlightMenu.appendChild(yellowHighlight);
+  const highlightMenu = document.createElement('nav'); highlightMenu.id = 'menuNavigation';highlightMenu.className = 'menu-container' ; const yellowHighlight = document.createElement('button');const lightgreenHighlight = document.createElement('button');const skyblueHighlight = document.createElement('button');const pinkHighlight = document.createElement('button');const blueHighlight = document.createElement('button');const redHighlight = document.createElement('button');const greenHighlight = document.createElement('button');const purpleHighlight = document.createElement('button');
+  yellowHighlight.id = 'yellowHighlight';yellowHighlight.className = 'btnHighlight';lightgreenHighlight.id = 'lightgreenHighlight';lightgreenHighlight.className = 'btnHighlight';skyblueHighlight.id = 'skyblueHighlight';skyblueHighlight.className = 'btnHighlight';pinkHighlight.id = 'pinkHighlight';pinkHighlight.className = 'btnHighlight';blueHighlight.id = 'blueHighlight';blueHighlight.className = 'btnHighlight';redHighlight.id = 'redHighlight';redHighlight.className = 'btnHighlight';greenHighlight.id = 'greenHighlight';greenHighlight.className = 'btnHighlight';purpleHighlight.id = 'purpleHighlight';purpleHighlight.className = 'btnHighlight';
+  highlightMenu.appendChild(yellowHighlight);highlightMenu.appendChild(lightgreenHighlight);highlightMenu.appendChild(skyblueHighlight);highlightMenu.appendChild(pinkHighlight);highlightMenu.appendChild(redHighlight);highlightMenu.appendChild(blueHighlight);highlightMenu.appendChild(greenHighlight);highlightMenu.appendChild(purpleHighlight);
   //メニューの出力
   highlightIcon.addEventListener('click', () => {
     highlightMenu.classList.toggle('show');
   });
-  //red
-  redHighlight.addEventListener('click', () => {highlightIcon.classList.add('red');highlightIcon.classList.remove('blue');highlightIcon.classList.remove('green');highlightIcon.classList.remove('yellow');})
-  //blue
-  blueHighlight.addEventListener('click', () => {highlightIcon.classList.add('blue');highlightIcon.classList.remove('red');highlightIcon.classList.remove('green');highlightIcon.classList.remove('yellow');})
-  //blue
-  greenHighlight.addEventListener('click', () => {highlightIcon.classList.add('green');highlightIcon.classList.remove('red');highlightIcon.classList.remove('blue');highlightIcon.classList.remove('yellow');})
-  //blue
-  yellowHighlight.addEventListener('click', () => {highlightIcon.classList.add('yellow');highlightIcon.classList.remove('red');highlightIcon.classList.remove('blue');highlightIcon.classList.remove('green');})
+  //yellow
+  yellowHighlight.addEventListener('click', () => {colorflag = 1;highlightIcon.classList.add('yellow');highlightIcon.classList.remove('lightgreen');highlightIcon.classList.remove('skyblue');highlightIcon.classList.remove('pink');highlightIcon.classList.remove('red');highlightIcon.classList.remove('blue');highlightIcon.classList.remove('green');highlightIcon.classList.remove('purple');})
 
+  //lightgreen
+  lightgreenHighlight.addEventListener('click', () => {colorflag = 2;highlightIcon.classList.add('lightgreen');highlightIcon.classList.remove('yellow');highlightIcon.classList.remove('skyblue');highlightIcon.classList.remove('pink');highlightIcon.classList.remove('red');highlightIcon.classList.remove('blue');highlightIcon.classList.remove('green');highlightIcon.classList.remove('purple');})
+
+  //skyblue
+  skyblueHighlight.addEventListener('click', () => {colorflag = 3;highlightIcon.classList.add('skyblue');highlightIcon.classList.remove('yellow');highlightIcon.classList.remove('lightgreen');highlightIcon.classList.remove('pink');highlightIcon.classList.remove('red');highlightIcon.classList.remove('blue');highlightIcon.classList.remove('green');highlightIcon.classList.remove('purple');})
+
+  //pink
+  pinkHighlight.addEventListener('click', () => {colorflag = 4;highlightIcon.classList.add('pink');highlightIcon.classList.remove('yellow');highlightIcon.classList.remove('lightgreen');highlightIcon.classList.remove('skyblue');highlightIcon.classList.remove('red');highlightIcon.classList.remove('blue');highlightIcon.classList.remove('green');highlightIcon.classList.remove('purple');})
+
+  //red
+  redHighlight.addEventListener('click', () => {colorflag = 5;highlightIcon.classList.add('red');highlightIcon.classList.remove('yellow');highlightIcon.classList.remove('lightgreen');highlightIcon.classList.remove('skyblue');highlightIcon.classList.remove('pink');highlightIcon.classList.remove('blue');highlightIcon.classList.remove('green');highlightIcon.classList.remove('purple');})
+
+  //blue
+  blueHighlight.addEventListener('click', () => {colorflag = 6;highlightIcon.classList.add('blue');highlightIcon.classList.remove('yellow');highlightIcon.classList.remove('lightgreen');highlightIcon.classList.remove('skyblue');highlightIcon.classList.remove('pink');highlightIcon.classList.remove('red');highlightIcon.classList.remove('green');highlightIcon.classList.remove('purple');})
+
+  //green
+  greenHighlight.addEventListener('click', () => {colorflag = 7;highlightIcon.classList.add('green');highlightIcon.classList.remove('yellow');highlightIcon.classList.remove('lightgreen');highlightIcon.classList.remove('skyblue');highlightIcon.classList.remove('pink');highlightIcon.classList.remove('red');highlightIcon.classList.remove('blue');highlightIcon.classList.remove('purple');})
+
+  //purple
+  purpleHighlight.addEventListener('click', () => {colorflag = 8;highlightIcon.classList.add('purple');highlightIcon.classList.remove('yellow');highlightIcon.classList.remove('lightgreen');highlightIcon.classList.remove('skyblue');highlightIcon.classList.remove('pink');highlightIcon.classList.remove('red');highlightIcon.classList.remove('blue');highlightIcon.classList.remove('green');})
+
+
+  
   btnHighlightToggle.appendChild(highlightMenu);
 
   rightGroup.appendChild(btnDownload); rightGroup.appendChild(btnDarkmode); rightGroup.appendChild(btnAjustFont);  rightGroup.appendChild(btnHighlightToggle);
@@ -118,7 +135,7 @@ window.setupShell = function setupShell(origContainer) {
   window.__viewer_ui = {
     shell, toolbar, wrapper, pagesHolder,
     pageInput, btnZoomIn, btnZoomOut, zoomVal, btnFitWidth, btnFitPage,
-    btnDownload, btnHighlightToggle, btnDarkmode, btnAjustFont, redHighlight, blueHighlight, greenHighlight, yellowHighlight,
+    btnDownload, btnHighlightToggle, btnDarkmode, btnAjustFont, yellowHighlight, lightgreenHighlight, skyblueHighlight, pinkHighlight, redHighlight, blueHighlight, greenHighlight, purpleHighlight, 
     // 互換: 旧コード（toolbar.js）が参照する名称に合わせたエイリアス
     get btnSvgMode(){ return btnDarkmode; },
     get btnOverlayMode(){ return btnAjustFont; }
@@ -149,13 +166,24 @@ function __parseColorToRgba(str){
   return null;
 }
 
-function __looksLikeYellowHighlight(r,g,b){
+var colorflag = 0;
+
+function __looksLikeHighlight(r,g,b){
   const bright = (r+g+b)/3 >= 160;
   const yellowish = (r>170 && g>170 && b<140) || (r>200 && g>180 && b<160);
   return bright && yellowish;
 }
 
-function __mapToBlue(r,g,b){ return { r:30, g:144, b:255 }; }
+function __mapToBlue(r,g,b){
+  if(colorflag == 1){return { r:255, g:255, b:0};}
+  if(colorflag == 2){return { r:0, g:255, b:0};}   
+  if(colorflag == 3){return { r:0, g:255, b:255};}
+  if(colorflag == 4){return { r:255, g:0, b:255};}   
+  if(colorflag == 5){return { r:255, g:0, b:0};}
+  if(colorflag == 6){return { r:0, g:0, b:255};}   
+  if(colorflag == 7){return { r:0, g:128, b:0};}
+  if(colorflag == 8){return { r:128, g:0, b:128};}   
+}
 
 function __getElementFillColor(elem){
   let fillAttr = elem.getAttribute && elem.getAttribute('fill');
@@ -164,7 +192,7 @@ function __getElementFillColor(elem){
   return null;
 }
 
-// SVG内のハイライト色を青系へ変換
+// SVG内のハイライト色を変換
 window.remapHighlightsInSvg = function remapHighlightsInSvg(svg){
   if (!svg) return 0;
   const targets = svg.querySelectorAll('rect, path, polygon, text, tspan, polyline, ellipse, circle');
@@ -172,12 +200,12 @@ window.remapHighlightsInSvg = function remapHighlightsInSvg(svg){
   targets.forEach(el => {
     const c = __getElementFillColor(el);
     if (!c) return;
-    if (__looksLikeYellowHighlight(c.r,c.g,c.b)){
-      if (!el.hasAttribute('data-original-fill')){
+    if (!el.hasAttribute('data-original-fill')){
         const f = el.getAttribute('fill'); if (f) el.setAttribute('data-original-fill', f); else el.setAttribute('data-original-fill', 'none');
         const fo = el.getAttribute('fill-opacity'); if (fo!==null) el.setAttribute('data-original-fill-opacity', fo);
         const op = el.getAttribute('opacity'); if (op!==null) el.setAttribute('data-original-opacity', op);
       }
+    if (__looksLikeHighlight(c.r,c.g,c.b)){
       const nb = __mapToBlue(c.r,c.g,c.b);
       el.setAttribute('fill', `rgb(${nb.r}, ${nb.g}, ${nb.b})`);
       if (!el.hasAttribute('data-original-fill-opacity')) el.setAttribute('fill-opacity', '0.6');
@@ -204,11 +232,57 @@ window.restoreAllPagesHighlights = function restoreAllPagesHighlights(){
 
 // ボタン配線
 window.ensureHighlightToggle = function ensureHighlightToggle(ui){
+  ui = ui || window.__viewer_ui; if (!ui || !ui.yellowHighlight) return;
+  if (ui.yellowHighlight.__wired) return;
+  ui = ui || window.__viewer_ui; if (!ui || !ui.lightgreenHighlight) return;
+  if (ui.lightgreenHighlight.__wired) return;
+  ui = ui || window.__viewer_ui; if (!ui || !ui.skyblueHighlight) return;
+  if (ui.skyblueHighlight.__wired) return;
+  ui = ui || window.__viewer_ui; if (!ui || !ui.pinkHighlight) return;
+  if (ui.pinkHighlight.__wired) return;
   ui = ui || window.__viewer_ui; if (!ui || !ui.redHighlight) return;
   if (ui.redHighlight.__wired) return;
-  const updateUi = () => { ui.redHighlight.style.background = window.__viewer_highlightEnabled ? '#0a84ff' : ''; };
+  ui = ui || window.__viewer_ui; if (!ui || !ui.blueHighlight) return;
+  if (ui.blueHighlight.__wired) return;
+  ui = ui || window.__viewer_ui; if (!ui || !ui.greenHighlight) return;
+  if (ui.greenHighlight.__wired) return;
+  ui = ui || window.__viewer_ui; if (!ui || !ui.purpleHighlight) return;
+  if (ui.purpleHighlight.__wired) return;
+  ui.yellowHighlight.addEventListener('click', () => {
+    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
+    try {
+        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
+        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
+      } catch(_) {}
+  });
+  ui.lightgreenHighlight.addEventListener('click', () => {
+    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
+    try {
+        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
+        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
+      } catch(_) {}
+  });
+  ui.skyblueHighlight.addEventListener('click', () => {
+    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
+    try {
+        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
+        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
+      } catch(_) {}
+  });
+  ui.pinkHighlight.addEventListener('click', () => {
+    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
+    try {
+        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
+        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
+      } catch(_) {}
+  });
   ui.redHighlight.addEventListener('click', () => {
     window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
+    try {
+        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
+        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
+      } catch(_) {}
+    /*
     if (window.__viewer_highlightEnabled){
       try {
         const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
@@ -216,10 +290,29 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
       } catch(_) {}
     } else {
       try { window.restoreAllPagesHighlights(); } catch(_) {}
-    }
-    updateUi();
+    }*/
   });
-  updateUi();
+  ui.blueHighlight.addEventListener('click', () => {
+    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
+    try {
+        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
+        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
+      } catch(_) {}
+  });
+  ui.greenHighlight.addEventListener('click', () => {
+    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
+    try {
+        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
+        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
+      } catch(_) {}
+  });
+  ui.purpleHighlight.addEventListener('click', () => {
+    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
+    try {
+        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
+        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
+      } catch(_) {}
+  });
   ui.btnHighlightToggle.__wired = true;
 };
 
