@@ -1,6 +1,7 @@
 // main.js
 // 旧 viewer.js のエントリーポイント（startViewer）を分離
 
+
 window.startViewer = async function startViewer(){
   // pdf.worker.js / cmaps のパスを拡張内の URL で設定
   try { pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('pdfjs/pdf.worker.js'); } catch(_) {}
@@ -65,13 +66,6 @@ window.startViewer = async function startViewer(){
   let removeCopyBlockers = null;
   if (!allowCopy) {
     removeCopyBlockers = window.installCopyBlockers(container);
-    const warn = document.createElement('div');
-    warn.textContent = 'このPDFはコピーが制限されています — コピーは無効化します。';
-    warn.style.color = '#ffcc00'; warn.style.padding = '6px'; warn.style.fontSize = '13px';
-    // ツールバー先頭に警告を表示
-    if (ui && ui.toolbar) {
-      ui.toolbar.insertBefore(warn, ui.toolbar.firstChild);
-    }
   }
 
   const curMode = (function(){ try { return localStorage.getItem('viewerTextMode') || 'svg'; } catch(_) { return 'svg'; } })();
@@ -100,9 +94,10 @@ window.startViewer = async function startViewer(){
       const svgTspanAllEmpty = (svg.querySelectorAll('tspan').length > 0) && !svgHasNonEmptyText;
       let hasAnyText = !!(textContent && Array.isArray(textContent.items) && textContent.items.length > 0) || svgHasNonEmptyText;
       if (svgTspanAllEmpty) { hasAnyText = false; }
-      const hasText = allowCopy && looksGoodTextContent(textContent);
+      // hasText はテキストの存在有無のみで判定（allowCopy はテキストレイヤの表示可否に使う）
+      const hasText = looksGoodTextContent(textContent);
 
-      // ページ要素をこの時点で用意（テキスト無しページは後で追加）
+      // ページ要素をこの時点で用意
       const pageDiv = document.createElement('div');
       pageDiv.className = 'page';
       pageDiv.setAttribute('data-base-width', viewport.width);
@@ -117,7 +112,8 @@ window.startViewer = async function startViewer(){
       paper.style.transformOrigin = '0 0';
       const footer = document.createElement('div'); footer.className = 'page-footer'; footer.textContent = `Page ${p} / ${pdf.numPages}`;
 
-      if (hasAnyText) {
+      // 常にSVG描画を使用（allowCopy=false でもベクター表示を維持）
+      if (true) {
         // 即時描画
         try {
           svg.style.width = viewport.width + 'px';
@@ -134,7 +130,8 @@ window.startViewer = async function startViewer(){
         if (window.__viewer_darkModeEnabled) {
           window.invertSvgColorsSmart(svg, { satThreshold: 0.15 });
         }
-        if (hasText) {
+        // テキストレイヤ: textContent があれば常に生成（allowCopy=false でもオーバーレイモードのため必要）
+        if (textContent && textContent.items && textContent.items.length > 0) {
           const wantForceVisible = (curMode === 'overlay');
           const overlayColor = window.__viewer_darkModeEnabled ? '#E0E0E0' : '#222222';
           window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: overlayColor, allowCopy: allowCopy });
@@ -144,22 +141,6 @@ window.startViewer = async function startViewer(){
           await window.processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
           try { console.log('ノーマル反転対象です'); } catch(_) {}
         }
-      } else {
-        // ML完了までDOMに追加しない
-        try {
-          await window.convertPageToPng(page, viewport, paper);
-        } catch (e) {
-          console.warn('convertPageToPng error', e);
-        }
-        pageDiv.appendChild(paper);
-        pageDiv.appendChild(footer);
-        container.appendChild(pageDiv);
-      }
-      if (hasText) {
-        const wantForceVisible = (curMode === 'overlay');
-        const overlayColor2 = window.__viewer_darkModeEnabled ? '#E0E0E0' : '#222222';
-        window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: overlayColor2, allowCopy: allowCopy });
-        if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
       }
 
       // 以降の二重処理を削除（上で分岐済み）
