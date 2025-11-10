@@ -70,15 +70,50 @@ window.invertSvgColorsSmart = function invertSvgColorsSmart(svg, options = {}) {
 
   const selector = 'text, tspan, path, rect, circle, ellipse, line, polyline, polygon, g';
   const nodes = svg.querySelectorAll(selector);
+  let textCount = 0, pathCount = 0, invertedCount = 0;
+  const tagStats = {};
   nodes.forEach(el => {
-    const tag = el.tagName.toLowerCase(); if (tag === 'image') return;
+    const tag = el.tagName.toLowerCase();
+    const baseTag = tag.replace(/^svg:/, ''); // 名前空間を除去
+    tagStats[tag] = (tagStats[tag] || 0) + 1;
+    if (baseTag === 'text' || baseTag === 'tspan') textCount++;
+    if (baseTag === 'path') pathCount++;
+    if (baseTag === 'image') return;
     let fillAttr = el.getAttribute('fill'); let fillIsGradient = false; if (fillAttr && fillAttr.trim().startsWith('url(')) fillIsGradient = true;
     let fillColor = null;
     if (!fillIsGradient) {
+      // まず属性と style から取得を試みる
       if (fillAttr && fillAttr !== 'currentColor' && fillAttr !== 'none') fillColor = parseColor(fillAttr);
       if (!fillColor && el.style && el.style.fill) fillColor = parseColor(el.style.fill);
-      if (!fillColor) { const cs = window.getComputedStyle(el); if (cs && cs.fill) fillColor = parseColor(cs.fill); }
+      
+      // fill属性がない場合（親から継承）はcomputedStyleを使うが、
+      // 親要素がすでに処理されている可能性があるため、親に fill 属性があるかチェック
+      if (!fillColor) { 
+        const cs = window.getComputedStyle(el); 
+        if (cs && cs.fill) {
+          // 親要素に fill 属性がある場合、親が既に処理済みなのでスキップ
+          let hasParentFill = false;
+          let parent = el.parentElement;
+          while (parent && parent.tagName.toLowerCase().replace(/^svg:/, '') !== 'svg') {
+            if (parent.getAttribute('fill')) {
+              hasParentFill = true;
+              break;
+            }
+            parent = parent.parentElement;
+          }
+          // 親に fill がない場合のみ computed を使用
+          if (!hasParentFill) {
+            fillColor = parseColor(cs.fill);
+          }
+        }
+      }
     }
+    
+    // LaTeX PDF デバッグ: text/tspan要素で fill が取得できているか確認
+    if ((baseTag === 'text' || baseTag === 'tspan') && textCount <= 5) {
+      console.log('[DEBUG text]', baseTag, textCount, 'fillAttr:', fillAttr, 'style.fill:', el.style.fill, 'computed:', fillColor ? `rgb(${fillColor.r},${fillColor.g},${fillColor.b})` : 'null');
+    }
+    
     let strokeAttr = el.getAttribute('stroke'); let strokeColor = null; if (strokeAttr && strokeAttr !== 'currentColor' && strokeAttr !== 'none') strokeColor = parseColor(strokeAttr);
     if (!strokeColor && el.style && el.style.stroke) strokeColor = parseColor(el.style.stroke);
     if (!strokeColor) { const cs = window.getComputedStyle(el); if (cs && cs.stroke) strokeColor = parseColor(cs.stroke); }
@@ -99,7 +134,12 @@ window.invertSvgColorsSmart = function invertSvgColorsSmart(svg, options = {}) {
       if (!el.hasAttribute('data-dm-original-fill')) {
         const of = el.getAttribute('fill'); el.setAttribute('data-dm-original-fill', of !== null ? of : '__dm__MISSING__');
       }
-      el.setAttribute('fill', window.pickForegroundForBackground(fillColor));
+      const newFill = window.pickForegroundForBackground(fillColor);
+      el.setAttribute('fill', newFill);
+      invertedCount++;
+      if (invertedCount <= 3) {
+        console.log('[INVERTED]', tag, 'from:', `rgb(${fillColor.r},${fillColor.g},${fillColor.b})`, 'to:', newFill);
+      }
     }
 
     if (strokeColor && !isColored(strokeColor, options)) {
@@ -107,8 +147,10 @@ window.invertSvgColorsSmart = function invertSvgColorsSmart(svg, options = {}) {
         const os = el.getAttribute('stroke'); el.setAttribute('data-dm-original-stroke', os !== null ? os : '__dm__MISSING__');
       }
       el.setAttribute('stroke', window.pickForegroundForBackground(strokeColor));
+      invertedCount++;
     }
   });
+  console.log('[invertSvgColorsSmart] text/tspan:', textCount, 'path:', pathCount, 'inverted:', invertedCount, 'tags:', tagStats);
   if (!svg.hasAttribute('data-dm-original-background')) {
     const bg = svg.style.background || '';
     svg.setAttribute('data-dm-original-background', bg);
