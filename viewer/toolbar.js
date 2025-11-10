@@ -113,9 +113,12 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
           const firstSpan = textLayer.querySelector('span');
           const allowCopy = firstSpan ? (getComputedStyle(firstSpan).userSelect !== 'none') : false;
           
+          console.log('[DEBUG] Overlay mode - allowCopy:', allowCopy, 'color:', overlayColor, 'spans:', textLayer.querySelectorAll('span').length);
+          
           textLayer.querySelectorAll('span').forEach(s => { 
-            s.style.color = overlayColor; 
-            s.style.WebkitTextFillColor = overlayColor; 
+            // 強制的に色を適用（透明を上書き）
+            s.style.setProperty('color', overlayColor, 'important');
+            s.style.setProperty('-webkit-text-fill-color', overlayColor, 'important');
             // allowCopy=true の場合のみ選択可能、false なら表示のみ
             s.style.pointerEvents = allowCopy ? 'auto' : 'none';
             s.style.userSelect = allowCopy ? 'text' : 'none';
@@ -124,6 +127,8 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
           textLayer.style.pointerEvents = allowCopy ? 'auto' : 'none';
           textLayer.style.userSelect = allowCopy ? 'text' : 'none';
           textLayer.style.zIndex = '3000'; 
+          
+          console.log('[DEBUG] First span after apply - color:', firstSpan?.style.color, 'computed:', firstSpan ? getComputedStyle(firstSpan).color : 'null');
         }
       }
     });
