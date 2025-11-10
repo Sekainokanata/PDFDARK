@@ -90,10 +90,9 @@ window.startViewer = async function startViewer(){
         const txt = (n.textContent || '').replace(/\s+/g, '');
         if (txt.length > 0) { svgHasNonEmptyText = true; break; }
       }
-      // tspanが存在しても全て空なら「テキスト無し」扱い
-      const svgTspanAllEmpty = (svg.querySelectorAll('tspan').length > 0) && !svgHasNonEmptyText;
-      let hasAnyText = !!(textContent && Array.isArray(textContent.items) && textContent.items.length > 0) || svgHasNonEmptyText;
-      if (svgTspanAllEmpty) { hasAnyText = false; }
+      // テキストレイヤーとSVG内テキストのいずれかにテキストがあればSVG描画を使用
+      const hasTextContent = !!(textContent && Array.isArray(textContent.items) && textContent.items.length > 0);
+      const hasAnyText = hasTextContent || svgHasNonEmptyText;
       // hasText はテキストの存在有無のみで判定（allowCopy はテキストレイヤの表示可否に使う）
       const hasText = looksGoodTextContent(textContent);
 
@@ -141,6 +140,22 @@ window.startViewer = async function startViewer(){
           await window.processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
           try { console.log('ノーマル反転対象です'); } catch(_) {}
         }
+              } else {
+        // ML完了までDOMに追加しない
+        try {
+          await window.convertPageToPng(page, viewport, paper);
+        } catch (e) {
+          console.warn('convertPageToPng error', e);
+        }
+        pageDiv.appendChild(paper);
+        pageDiv.appendChild(footer);
+        container.appendChild(pageDiv);
+      }
+      if (hasText) {
+        const wantForceVisible = (curMode === 'overlay');
+        const overlayColor2 = window.__viewer_darkModeEnabled ? '#E0E0E0' : '#222222';
+        window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: overlayColor2, allowCopy: allowCopy });
+        if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
       }
 
       // 以降の二重処理を削除（上で分岐済み）
