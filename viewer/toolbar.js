@@ -121,3 +121,5 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   // Download ボタン配線（既に wired ならスキップ）
   try { window.wireDownloadButton(ui); } catch (e) { console.warn('wireDownloadButton failed', e); }
 };
+
+
