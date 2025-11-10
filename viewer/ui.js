@@ -88,9 +88,17 @@ window.setupShell = function setupShell(origContainer) {
 
   const wrapper = document.createElement('div');
   wrapper.id = 'viewer-container-wrapper';
-  Object.assign(wrapper.style, { flex: '1 1 auto', overflow: 'auto', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '20px', background: '#282828' });
-  
- 
+  // 横スクロール時に左端まで届かない問題を回避するため、
+  // 内部コンテナの幅を内容幅に合わせ、ラッパーはブロックで単純なスクロールにする
+  Object.assign(wrapper.style, { flex: '1 1 auto', overflow: 'auto', display: 'block', padding: '20px', background: '#282828' });
+
+  const pagesHolder = document.createElement('div');
+  pagesHolder.id = 'viewer-pages';
+  pagesHolder.style.display = 'flex'; pagesHolder.style.flexDirection = 'column'; pagesHolder.style.gap = '3px'; pagesHolder.style.alignItems = 'center';
+  // コンテンツ幅に合わせて伸びるように（これにより左右どちらにもスクロール可能）
+  pagesHolder.style.width = 'max-content';
+  // ビューポートより狭いときは中央寄せ（広いときはスクロール可能のまま）
+  pagesHolder.style.margin = '0 auto';
 
   wrapper.appendChild(pagesHolder);
   shell.appendChild(toolbar); shell.appendChild(wrapper);
@@ -113,6 +121,32 @@ window.setupShell = function setupShell(origContainer) {
 // ========= ハイライト色トグル（ui.jsで実装） =========
 // 状態フラグ
 window.__viewer_highlightEnabled = false;
+
+// ========= ダークモード トグル =========
+// グローバル状態（既定: OFF）
+if (typeof window.__viewer_darkModeEnabled === 'undefined') {
+  window.__viewer_darkModeEnabled = false;
+}
+
+// ボタン配線（ON でダークモード適用、OFF で元に戻す）
+window.ensureDarkModeToggle = function ensureDarkModeToggle(ui){
+  ui = ui || window.__viewer_ui; if (!ui || !ui.btnDarkmode) return;
+  const btn = ui.btnDarkmode;
+  if (btn.__dm_wired) return;
+  const updateUi = () => {
+    btn.title = window.__viewer_darkModeEnabled ? 'ダークモード: ON' : 'ダークモード: OFF';
+    // ON のとき他のトグル同様に青く表示
+    btn.style.background = window.__viewer_darkModeEnabled ? '#0a84ff' : '';
+  };
+  btn.addEventListener('click', () => {
+    // 既存の toolbar.js でもこのボタンを使用しているため、ここでは状態だけ反転し適用を呼ぶ
+    window.__viewer_darkModeEnabled = !window.__viewer_darkModeEnabled;
+    try { if (typeof window.__viewer_applyDarkMode === 'function') { window.__viewer_applyDarkMode(window.__viewer_darkModeEnabled); } } catch(_) {}
+    updateUi();
+  });
+  updateUi();
+  btn.__dm_wired = true;
+};
 
 // 色文字列 → {r,g,b,a} に解析
 function __parseColorToRgba(str){
