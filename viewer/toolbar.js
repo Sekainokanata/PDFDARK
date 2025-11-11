@@ -91,12 +91,45 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     pages.forEach(pageDiv => {
       const svgElem = pageDiv.querySelector('svg'); const textLayer = pageDiv.querySelector('.textLayer');
       if (mode === 'svg') {
+        // SVGモード: SVG内テキストを表示、テキストレイヤは透明
         if (svgElem) { svgElem.style.pointerEvents = ''; svgElem.style.userSelect = ''; svgElem.querySelectorAll('text, tspan').forEach(t => { t.style.visibility = ''; t.style.display = ''; t.style.pointerEvents = ''; t.style.userSelect = ''; }); }
-        if (textLayer) { textLayer.querySelectorAll('span').forEach(s => { s.style.color = 'transparent'; s.style.WebkitTextFillColor = 'transparent'; s.style.pointerEvents = 'none'; s.style.userSelect = 'none'; s.setAttribute('aria-hidden', 'true'); }); textLayer.style.pointerEvents = 'none'; textLayer.style.userSelect = 'none'; }
+        if (textLayer) { 
+          textLayer.querySelectorAll('span').forEach(s => { 
+            s.style.color = 'transparent'; 
+            s.style.WebkitTextFillColor = 'transparent'; 
+            s.style.pointerEvents = 'none'; 
+            s.style.userSelect = 'none'; 
+            s.setAttribute('aria-hidden', 'true'); 
+          }); 
+          textLayer.style.pointerEvents = 'none'; 
+          textLayer.style.userSelect = 'none'; 
+        }
       } else {
+        // オーバーレイモード: SVG内テキストを非表示、テキストレイヤを表示
         if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; t.style.pointerEvents = 'none'; t.style.userSelect = 'none'; }); svgElem.style.pointerEvents = 'none'; svgElem.style.userSelect = 'none'; }
         const overlayColor = (window.__viewer_darkModeEnabled ? '#e0e0e0' : '#222222');
-        if (textLayer) { textLayer.querySelectorAll('span').forEach(s => { s.style.color = overlayColor; s.style.WebkitTextFillColor = overlayColor; s.style.pointerEvents = 'auto'; s.style.userSelect = 'text'; s.removeAttribute('aria-hidden'); }); textLayer.style.pointerEvents = 'auto'; textLayer.style.userSelect = 'text'; textLayer.style.zIndex = '3000'; }
+        if (textLayer) { 
+          // allowCopy 状態を確認（data 属性などで保持されていれば参照、なければ span の userSelect で判定）
+          const firstSpan = textLayer.querySelector('span');
+          const allowCopy = firstSpan ? (getComputedStyle(firstSpan).userSelect !== 'none') : false;
+          
+          console.log('[DEBUG] Overlay mode - allowCopy:', allowCopy, 'color:', overlayColor, 'spans:', textLayer.querySelectorAll('span').length);
+          
+          textLayer.querySelectorAll('span').forEach(s => { 
+            // 強制的に色を適用（透明を上書き）
+            s.style.setProperty('color', overlayColor, 'important');
+            s.style.setProperty('-webkit-text-fill-color', overlayColor, 'important');
+            // allowCopy=true の場合のみ選択可能、false なら表示のみ
+            s.style.pointerEvents = allowCopy ? 'auto' : 'none';
+            s.style.userSelect = allowCopy ? 'text' : 'none';
+            s.removeAttribute('aria-hidden'); 
+          }); 
+          textLayer.style.pointerEvents = allowCopy ? 'auto' : 'none';
+          textLayer.style.userSelect = allowCopy ? 'text' : 'none';
+          textLayer.style.zIndex = '3000'; 
+          
+          console.log('[DEBUG] First span after apply - color:', firstSpan?.style.color, 'computed:', firstSpan ? getComputedStyle(firstSpan).color : 'null');
+        }
       }
     });
     try { localStorage.setItem('viewerTextMode', mode); } catch(_) {}
