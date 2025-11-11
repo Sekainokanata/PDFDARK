@@ -196,7 +196,7 @@ input::-webkit-inner-spin-button {
     top: 46px;
     gap: 15px; /* 各項目の間隔 */
     padding: 10px;
-    background-color: #f0f0f0;
+    background-color: #3C3C3C;
     border: 1px solid #ccc;
     border-radius: 5px;
 }
@@ -223,7 +223,7 @@ input::-webkit-inner-spin-button {
 }
 
 #highlighticon.red{
-    background-color: #FF0000;
+    background-color: #ff0000;
 }
 
 #highlighticon.blue{
@@ -241,7 +241,12 @@ input::-webkit-inner-spin-button {
 .btnHighlight{
     height: 1rem;
     width: 1rem;
+    margin: 1px;
     border: none;
+}
+
+.selected{
+    border: 1px solid #ff0000;
 }
 
 #yellowHighlight{

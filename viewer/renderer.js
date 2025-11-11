@@ -47,7 +47,7 @@ window.pickForegroundForBackground = function pickForegroundForBackground(bgRgb)
   function srgbToLinearChannel(c) { const v = c / 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
   function relativeLuminance(rgb) { const R = srgbToLinearChannel(rgb.r), G = srgbToLinearChannel(rgb.g), B = srgbToLinearChannel(rgb.b); return 0.2126 * R + 0.7152 * G + 0.0722 * B; }
   const lum = relativeLuminance(bgRgb);
-  return lum > 0.5 ? '#000000' : '#ffffff';
+  return lum > 0.5 ? '#1E1E1E' : '#E0E0E0';
 };
 
 // 既存のスマート反転（簡略化しつつコピペ）。ここでは svg 内の文字など非彩色要素を黒背景に映える色へ置換
@@ -156,13 +156,13 @@ window.invertSvgColorsSmart = function invertSvgColorsSmart(svg, options = {}) {
     const bg = svg.style.background || '';
     svg.setAttribute('data-dm-original-background', bg);
   }
-  svg.style.background = '#000';
+  svg.style.background = '#1E1E1E';
 };
 
 
 // テキストレイヤ（paper内に配置）
 window.renderTextLayerFromTextContent = function renderTextLayerFromTextContent(textContent, viewport, pageDiv, options = {}) {
-  options = Object.assign({ forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#fff', zIndex: 3000, allowCopy: false }, options);
+  options = Object.assign({ forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#E0E0E0', zIndex: 3000, allowCopy: false }, options);
   const paper = pageDiv.querySelector('.paper') || pageDiv; if (getComputedStyle(paper).position === 'static') paper.style.position = 'relative';
   // 既存の textLayer があれば除去（重複生成を防止）
   try { const existing = paper.querySelector('.textLayer'); if (existing) existing.remove(); } catch(_) {}
@@ -1259,7 +1259,7 @@ window.__viewer_applyDarkMode = async function __viewer_applyDarkMode(enabled){
         // OFF: SVG を可能なら元の色へ戻す（背景も）
         if (svg) {
           try {
-            // 背景を初期化（dark適用時に #000 を設定、元の背景は data-dm-original-background）
+            // 背景を初期化（dark適用時に #1E1E1E を設定、元の背景は data-dm-original-background）
             const bg = svg.getAttribute('data-dm-original-background');
             if (bg !== null) {
               if (bg === '') svg.style.background = ''; else svg.style.background = bg;
