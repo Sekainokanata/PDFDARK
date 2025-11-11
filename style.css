@@ -21,7 +21,7 @@ html, body {
     align-items: center;
     gap: 8px;
     padding: 8px 0px;
-    height: 27px;
+    max-height: 56px;
     /*background: linear-gradient(#121212, #161616);*/
     background: #121212;
     border-bottom: 1px solid rgba(255,255,255,0.04);
@@ -193,7 +193,7 @@ input::-webkit-inner-spin-button {
     display: none;
     position: fixed;
     right: 0px;
-    top: 46px;
+    top: 56px;
     gap: 15px; /* 各項目の間隔 */
     padding: 10px;
     background-color: #3C3C3C;
