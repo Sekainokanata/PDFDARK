@@ -88,28 +88,28 @@ window.setupShell = function setupShell(origContainer) {
     highlightMenu.classList.toggle('show');
   });
   //yellow
-  yellowHighlight.addEventListener('click', () =>{colorflag = 1; yellowHighlight.classList.add('selected'); highlightIcon.classList.add('yellow'); highlightIcon.classList.remove('lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple'); lightgreenHighlight.classList.remove('selected'); skyblueHighlight.classList.remove('selected'); pinkHighlight.classList.remove('selected'); redHighlight.classList.remove('selected'); blueHighlight.classList.remove('selected'); greenHighlight.classList.remove('selected'); purpleHighlight.classList.remove('selected');})
+  yellowHighlight.addEventListener('click', () =>{yellowHighlight.classList.add('selected'); highlightIcon.classList.add('yellow'); highlightIcon.classList.remove('lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple'); lightgreenHighlight.classList.remove('selected'); skyblueHighlight.classList.remove('selected'); pinkHighlight.classList.remove('selected'); redHighlight.classList.remove('selected'); blueHighlight.classList.remove('selected'); greenHighlight.classList.remove('selected'); purpleHighlight.classList.remove('selected');})
 
   //lightgreen
-  lightgreenHighlight.addEventListener('click', () => {colorflag = 2; lightgreenHighlight.classList.add('selected'); highlightIcon.classList.add('lightgreen'); highlightIcon.classList.remove('yellow', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple'); yellowHighlight.classList.remove('selected'); skyblueHighlight.classList.remove('selected'); pinkHighlight.classList.remove('selected'); redHighlight.classList.remove('selected'); blueHighlight.classList.remove('selected'); greenHighlight.classList.remove('selected'); purpleHighlight.classList.remove('selected');})
+  lightgreenHighlight.addEventListener('click', () => {lightgreenHighlight.classList.add('selected'); highlightIcon.classList.add('lightgreen'); highlightIcon.classList.remove('yellow', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple'); yellowHighlight.classList.remove('selected'); skyblueHighlight.classList.remove('selected'); pinkHighlight.classList.remove('selected'); redHighlight.classList.remove('selected'); blueHighlight.classList.remove('selected'); greenHighlight.classList.remove('selected'); purpleHighlight.classList.remove('selected');})
 
   //skyblue
-  skyblueHighlight.addEventListener('click', () => {colorflag = 3; skyblueHighlight.classList.add('selected'); highlightIcon.classList.add('skyblue'); highlightIcon.classList.remove('yellow', 'lightgreen', 'pink', 'red', 'blue', 'green', 'purple'); yellowHighlight.classList.remove('selected'); lightgreenHighlight.classList.remove('selected'); pinkHighlight.classList.remove('selected'); redHighlight.classList.remove('selected'); blueHighlight.classList.remove('selected'); greenHighlight.classList.remove('selected'); purpleHighlight.classList.remove('selected');})
+  skyblueHighlight.addEventListener('click', () => {skyblueHighlight.classList.add('selected'); highlightIcon.classList.add('skyblue'); highlightIcon.classList.remove('yellow', 'lightgreen', 'pink', 'red', 'blue', 'green', 'purple'); yellowHighlight.classList.remove('selected'); lightgreenHighlight.classList.remove('selected'); pinkHighlight.classList.remove('selected'); redHighlight.classList.remove('selected'); blueHighlight.classList.remove('selected'); greenHighlight.classList.remove('selected'); purpleHighlight.classList.remove('selected');})
 
   //pink
-  pinkHighlight.addEventListener('click', () => {colorflag = 4; pinkHighlight.classList.add('selected'); highlightIcon.classList.add('pink'); highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'red', 'blue', 'green', 'purple'); yellowHighlight.classList.remove('selected'); lightgreenHighlight.classList.remove('selected'); skyblueHighlight.classList.remove('selected'); redHighlight.classList.remove('selected'); blueHighlight.classList.remove('selected'); greenHighlight.classList.remove('selected'); purpleHighlight.classList.remove('selected');})
+  pinkHighlight.addEventListener('click', () => {pinkHighlight.classList.add('selected'); highlightIcon.classList.add('pink'); highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'red', 'blue', 'green', 'purple'); yellowHighlight.classList.remove('selected'); lightgreenHighlight.classList.remove('selected'); skyblueHighlight.classList.remove('selected'); redHighlight.classList.remove('selected'); blueHighlight.classList.remove('selected'); greenHighlight.classList.remove('selected'); purpleHighlight.classList.remove('selected');})
 
   //red
-  redHighlight.addEventListener('click', () => {colorflag = 5; redHighlight.classList.add('selected'); highlightIcon.classList.add('red'); highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'blue', 'green', 'purple'); yellowHighlight.classList.remove('selected'); lightgreenHighlight.classList.remove('selected'); skyblueHighlight.classList.remove('selected'); pinkHighlight.classList.remove('selected'); blueHighlight.classList.remove('selected'); greenHighlight.classList.remove('selected'); purpleHighlight.classList.remove('selected');})
+  redHighlight.addEventListener('click', () => {redHighlight.classList.add('selected'); highlightIcon.classList.add('red'); highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'blue', 'green', 'purple'); yellowHighlight.classList.remove('selected'); lightgreenHighlight.classList.remove('selected'); skyblueHighlight.classList.remove('selected'); pinkHighlight.classList.remove('selected'); blueHighlight.classList.remove('selected'); greenHighlight.classList.remove('selected'); purpleHighlight.classList.remove('selected');})
 
   //blue
-  blueHighlight.addEventListener('click', () => {colorflag = 6; blueHighlight.classList.add('selected'); highlightIcon.classList.add('blue'); highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'green', 'purple'); yellowHighlight.classList.remove('selected'); lightgreenHighlight.classList.remove('selected'); skyblueHighlight.classList.remove('selected'); pinkHighlight.classList.remove('selected'); redHighlight.classList.remove('selected'); greenHighlight.classList.remove('selected'); purpleHighlight.classList.remove('selected');})
+  blueHighlight.addEventListener('click', () => {blueHighlight.classList.add('selected'); highlightIcon.classList.add('blue'); highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'green', 'purple'); yellowHighlight.classList.remove('selected'); lightgreenHighlight.classList.remove('selected'); skyblueHighlight.classList.remove('selected'); pinkHighlight.classList.remove('selected'); redHighlight.classList.remove('selected'); greenHighlight.classList.remove('selected'); purpleHighlight.classList.remove('selected');})
 
   //green
-  greenHighlight.addEventListener('click', () => {colorflag = 7; greenHighlight.classList.add('selected'); highlightIcon.classList.add('green'); highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'purple'); yellowHighlight.classList.remove('selected'); lightgreenHighlight.classList.remove('selected'); skyblueHighlight.classList.remove('selected'); pinkHighlight.classList.remove('selected'); redHighlight.classList.remove('selected'); blueHighlight.classList.remove('selected'); purpleHighlight.classList.remove('selected');})
+  greenHighlight.addEventListener('click', () => {greenHighlight.classList.add('selected'); highlightIcon.classList.add('green'); highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'purple'); yellowHighlight.classList.remove('selected'); lightgreenHighlight.classList.remove('selected'); skyblueHighlight.classList.remove('selected'); pinkHighlight.classList.remove('selected'); redHighlight.classList.remove('selected'); blueHighlight.classList.remove('selected'); purpleHighlight.classList.remove('selected');})
 
   //purple
-  purpleHighlight.addEventListener('click', () => {colorflag = 8; purpleHighlight.classList.add('selected'); highlightIcon.classList.add('purple'); highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green'); yellowHighlight.classList.remove('selected'); lightgreenHighlight.classList.remove('selected'); skyblueHighlight.classList.remove('selected'); pinkHighlight.classList.remove('selected'); redHighlight.classList.remove('selected'); blueHighlight.classList.remove('selected'); greenHighlight.classList.remove('selected');})
+  purpleHighlight.addEventListener('click', () => {purpleHighlight.classList.add('selected'); highlightIcon.classList.add('purple'); highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green'); yellowHighlight.classList.remove('selected'); lightgreenHighlight.classList.remove('selected'); skyblueHighlight.classList.remove('selected'); pinkHighlight.classList.remove('selected'); redHighlight.classList.remove('selected'); blueHighlight.classList.remove('selected'); greenHighlight.classList.remove('selected');})
 
 
   
@@ -291,68 +291,104 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
   if (ui.purpleHighlight.__wired) return;
   ui.yellowHighlight.addEventListener('click', () => {
     window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
-    try {
-        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
-        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
-      } catch(_) {}
-  });
-  ui.lightgreenHighlight.addEventListener('click', () => {
-    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
-    try {
-        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
-        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
-      } catch(_) {}
-  });
-  ui.skyblueHighlight.addEventListener('click', () => {
-    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
-    try {
-        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
-        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
-      } catch(_) {}
-  });
-  ui.pinkHighlight.addEventListener('click', () => {
-    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
-    try {
-        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
-        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
-      } catch(_) {}
-  });
-  ui.redHighlight.addEventListener('click', () => {
-    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
-    try {
-        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
-        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
-      } catch(_) {}
-    /*
-    if (window.__viewer_highlightEnabled){
+    if (colorflag != 1){
       try {
+        colorflag = 1;
         const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
         svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
       } catch(_) {}
     } else {
-      try { window.restoreAllPagesHighlights(); } catch(_) {}
-    }*/
+      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+    }
+  });
+  ui.lightgreenHighlight.addEventListener('click', () => {
+    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
+    if (colorflag != 2){
+      try {
+        colorflag = 2;
+        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
+        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
+      } catch(_) {}
+    } else {
+      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+    }
+  });
+  ui.skyblueHighlight.addEventListener('click', () => {
+    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
+    if (colorflag != 3){
+      try {
+        colorflag = 3;
+        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
+        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
+      } catch(_) {}
+    } else {
+      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+    }
+  });
+  ui.pinkHighlight.addEventListener('click', () => {
+    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
+    if (colorflag != 4){
+      try {
+        colorflag = 4;
+        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
+        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
+      } catch(_) {}
+    } else {
+      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+    }
+  });
+  ui.redHighlight.addEventListener('click', () => {
+    window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
+    /*
+    try {
+        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
+        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
+      } catch(_) {}*/
+    if (colorflag != 5){
+      try {
+        colorflag = 5;
+        const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
+        svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
+      } catch(_) {}
+    } else {
+      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+    }
   });
   ui.blueHighlight.addEventListener('click', () => {
     window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
-    try {
+    if (colorflag != 6){
+      try {
+        colorflag = 6;
         const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
         svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
       } catch(_) {}
+    } else {
+      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+    }
   });
   ui.greenHighlight.addEventListener('click', () => {
     window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
-    try {
+    if (colorflag != 7){
+      try {
+        colorflag = 7;
         const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
         svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
       } catch(_) {}
+    } else {
+      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+    }
   });
   ui.purpleHighlight.addEventListener('click', () => {
     window.__viewer_highlightEnabled = !window.__viewer_highlightEnabled;
-    try {
+    if (colorflag != 8){
+      try {
+        colorflag = 8;
         const holder = ui.pagesHolder || document.getElementById('viewer-pages') || document; const svgs = holder.querySelectorAll('svg');
         svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
       } catch(_) {}
+    } else {
+      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+    }
   });
   ui.btnHighlightToggle.__wired = true;
 };
