@@ -95,8 +95,8 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
         if (svgElem) { svgElem.style.pointerEvents = ''; svgElem.style.userSelect = ''; svgElem.querySelectorAll('text, tspan').forEach(t => { t.style.visibility = ''; t.style.display = ''; t.style.pointerEvents = ''; t.style.userSelect = ''; }); }
         if (textLayer) { 
           textLayer.querySelectorAll('span').forEach(s => { 
-            s.style.color = 'transparent'; 
-            s.style.WebkitTextFillColor = 'transparent'; 
+            s.style.setProperty('color', 'transparent', 'important');
+            s.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
             s.style.pointerEvents = 'none'; 
             s.style.userSelect = 'none'; 
             s.setAttribute('aria-hidden', 'true'); 

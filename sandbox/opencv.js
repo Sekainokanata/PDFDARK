@@ -41,7 +41,19 @@
       const hsv = new cv.Mat(); cv.cvtColor(src, hsv, cv.COLOR_RGBA2RGB); cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
       const channels = new cv.MatVector(); cv.split(hsv, channels);
       const sat = channels.get(1); const satMean = cv.mean(sat)[0]/255;
-      const histSize=[64]; const ranges=[0,256]; const hist = new cv.Mat(); cv.calcHist([gray], [0], new cv.Mat(), hist, histSize, ranges, false);
+      
+      // calcHist用のパラメータを正しい形式で作成
+      const srcVec = new cv.MatVector();
+      srcVec.push_back(gray);
+      const histChannels = [0];
+      const histSize = [64];
+      const ranges = [0, 256];
+      const hist = new cv.Mat();
+      const mask = new cv.Mat();
+      cv.calcHist(srcVec, histChannels, mask, hist, histSize, ranges, false);
+      srcVec.delete();
+      mask.delete();
+      
       let pageEntropy=0; for(let i=0;i<64;i++){ const p=hist.data32F[i]/(pageArea||1); if(p>0) pageEntropy -= p*Math.log2(p); }
 
       const candidates=[];
@@ -56,7 +68,30 @@
         if (edgeRatio < params.edgeDensityMin) { cnt.delete(); continue; }
         const roiMask = close.roi(rect); const fillRatio = cv.countNonZero(roiMask)/(area||1); roiMask.delete();
         let nx=x, ny=y, nww=ww, nhh=hh;
-        if (params.tightenToMask){ const sub=close.roi(rect); const nz=new cv.Mat(); cv.findNonZero(sub, nz); if(!nz.empty()){ const tight=cv.boundingRect(nz); nx=Math.max(0, x+tight.x-params.tightPadding); ny=Math.max(0, y+tight.y-params.tightPadding); nww=Math.min(sw, x+tight.x+tight.width+params.tightPadding)-nx; nhh=Math.min(sh, y+tight.y+tight.height+params.tightPadding)-ny; } nz.delete(); sub.delete(); }
+        if (params.tightenToMask){ 
+          const sub=close.roi(rect); 
+          // findNonZeroの代わりに、マスクから直接バウンディングボックスを計算
+          let minX=ww, minY=hh, maxX=0, maxY=0;
+          let found=false;
+          for(let py=0; py<hh; py++){
+            for(let px=0; px<ww; px++){
+              if(sub.ucharAt(py, px) > 0){
+                found=true;
+                if(px<minX) minX=px;
+                if(px>maxX) maxX=px;
+                if(py<minY) minY=py;
+                if(py>maxY) maxY=py;
+              }
+            }
+          }
+          if(found){
+            nx=Math.max(0, x+minX-params.tightPadding); 
+            ny=Math.max(0, y+minY-params.tightPadding); 
+            nww=Math.min(sw, x+maxX+1+params.tightPadding)-nx; 
+            nhh=Math.min(sh, y+maxY+1+params.tightPadding)-ny;
+          }
+          sub.delete(); 
+        }
         if (nww<=4||nhh<=4){ cnt.delete(); continue; }
         const tRect=new cv.Rect(nx,ny,nww,nhh); const tMask=close.roi(tRect); const tightFill=cv.countNonZero(tMask)/((nww*nhh)||1); tMask.delete();
         if (tightFill < params.minFillRatio) { cnt.delete(); continue; }
