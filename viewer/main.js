@@ -41,7 +41,7 @@ window.startViewer = async function startViewer(){
         let current = 1.0;
         try { const txt = (ui.zoomVal.value || '100%').toString().replace('%',''); const v = parseFloat(txt); if (isFinite(v) && v>0) current = v/100; } catch(_) {}
 
-        const K = 0.008; // 感度係数（小さく→低感度/大きく→高感度）
+        const K = 0.003; // 感度係数（小さく→低感度/大きく→高感度）
         const factor = Math.exp(-e.deltaY * K);
         const next = Math.min(5, Math.max(0.1, current * factor));
 
@@ -55,7 +55,11 @@ window.startViewer = async function startViewer(){
   } catch(_) {}
 
   //ページ数反映
-  try { if (ui && ui.pageTotal) ui.pageTotal.textContent = `/ ${pdf.numPages}`;} catch(_) {}
+  try { 
+    if (ui && ui.pageTotal && ui.pageTotal !== null) {
+      ui.pageTotal.textContent = `/ ${pdf.numPages}`;
+    }
+  } catch(_) {}
 
   // ハイライトトグルボタン追加 + 監視
   try { window.ensureHighlightToggle(ui); } catch(_) {}
@@ -145,6 +149,14 @@ window.startViewer = async function startViewer(){
       paper.style.height = viewport.height + 'px';
       paper.style.transformOrigin = '0 0';
       const footer = document.createElement('div'); footer.className = 'page-footer'; footer.textContent = `Page ${p} / ${pdf.numPages}`;
+      
+      // ページラッパー（page + footer を含む）
+      const pageWrapper = document.createElement('div');
+      pageWrapper.className = 'page-wrapper';
+      pageWrapper.style.display = 'flex';
+      pageWrapper.style.flexDirection = 'column';
+      pageWrapper.style.alignItems = 'center';
+      pageWrapper.style.gap = '8px';
 
       // 常にSVG描画を使用（allowCopy=false でもベクター表示を維持）
       if (hasAnyText) {
@@ -157,8 +169,9 @@ window.startViewer = async function startViewer(){
         } catch(_) {}
         paper.appendChild(svg);
         pageDiv.appendChild(paper);
-        pageDiv.appendChild(footer);
-        container.appendChild(pageDiv);
+        pageWrapper.appendChild(pageDiv);
+        pageWrapper.appendChild(footer);
+        container.appendChild(pageWrapper);
 
         // ここから描画後の調整（ダークモードON時のみスマート反転）
         if (window.__viewer_darkModeEnabled) {
@@ -183,8 +196,9 @@ window.startViewer = async function startViewer(){
           console.warn('convertPageToPng error', e);
         }
         pageDiv.appendChild(paper);
-        pageDiv.appendChild(footer);
-        container.appendChild(pageDiv);
+        pageWrapper.appendChild(pageDiv);
+        pageWrapper.appendChild(footer);
+        container.appendChild(pageWrapper);
       }
       if (hasText) {
         const wantForceVisible = (curMode === 'overlay');
@@ -195,7 +209,14 @@ window.startViewer = async function startViewer(){
 
       // 以降の二重処理を削除（上で分岐済み）
 
-    } catch(err){ console.error('Error rendering page', p, err); const errDiv = document.createElement('div'); errDiv.textContent = `Error rendering page ${p}: ${err.message || err}`; container.appendChild(errDiv); }
+    } catch(err){ 
+      // Shading エラーは警告レベルなのでログを抑制
+      if (err && err.message && err.message.includes('Unknown IR type: Shading')) {
+        console.warn(`Page ${p}: Shading not supported (non-critical)`);
+      } else {
+        console.error(`Error rendering page ${p}`, err);
+      }
+    }
   }
 
   // 配線後に初期スケール/モードを適用

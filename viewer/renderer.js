@@ -597,9 +597,16 @@ window.detectPhotoRegionsClassic = function detectPhotoRegionsClassic(imgDataSma
 // OpenCV.js 読み込み待機（すでに読み込まれていれば即解決）
 // OpenCV を sandbox で実行
 window.__ensureCvSandboxReady = async function __ensureCvSandboxReady(){
-  if (window.__cvSandbox && window.__cvSandbox.ready) return window.__cvSandbox;
+  if (window.__cvSandbox && window.__cvSandbox.ready) {
+    console.log('[DEBUG] OpenCV sandbox already ready');
+    return window.__cvSandbox;
+  }
   const sb = window.__cvSandbox || (window.__cvSandbox = { ready: false, queue: Promise.resolve() });
-  if (sb.readyPromise) return sb.readyPromise;
+  if (sb.readyPromise) {
+    console.log('[DEBUG] OpenCV sandbox readyPromise exists, waiting...');
+    return sb.readyPromise;
+  }
+  console.log('[DEBUG] Creating OpenCV sandbox iframe');
   sb.readyPromise = new Promise((resolve) => {
     const iframe = document.createElement('iframe');
     iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
@@ -607,26 +614,75 @@ window.__ensureCvSandboxReady = async function __ensureCvSandboxReady(){
     const src = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL)
       ? chrome.runtime.getURL('sandbox/opencv.html')
       : 'sandbox/opencv.html';
+    console.log('[DEBUG] OpenCV sandbox iframe src:', src);
     iframe.src = src; document.body.appendChild(iframe);
-    let timeoutId = setTimeout(() => { try{ window.removeEventListener('message', onMsg); }catch(_){}; sb.iframe = iframe; sb.win = iframe.contentWindow; sb.ready = false; sb.queue = Promise.resolve(); resolve(sb); }, 5000);
-    function onMsg(ev){ try{ if (ev.source === iframe.contentWindow && ev.data && ev.data.type === 'opencvReady'){ clearTimeout(timeoutId); window.removeEventListener('message', onMsg); sb.iframe = iframe; sb.win = iframe.contentWindow; sb.ready = true; sb.queue = Promise.resolve(); resolve(sb); } }catch(_){}}
+    let timeoutId = setTimeout(() => { 
+      console.warn('[DEBUG] OpenCV sandbox timeout - opencvReady message not received within 5s');
+      try{ window.removeEventListener('message', onMsg); }catch(_){}; 
+      sb.iframe = iframe; sb.win = iframe.contentWindow; sb.ready = false; sb.queue = Promise.resolve(); 
+      resolve(sb); 
+    }, 5000);
+    function onMsg(ev){ 
+      try{ 
+        if (ev.source === iframe.contentWindow && ev.data && ev.data.type === 'opencvReady'){ 
+          console.log('[DEBUG] OpenCV sandbox ready - opencvReady message received');
+          clearTimeout(timeoutId); 
+          window.removeEventListener('message', onMsg); 
+          sb.iframe = iframe; sb.win = iframe.contentWindow; sb.ready = true; sb.queue = Promise.resolve(); 
+          resolve(sb); 
+        } 
+      }catch(err){
+        console.error('[DEBUG] Error in onMsg handler:', err);
+      }
+    }
     window.addEventListener('message', onMsg);
+    iframe.onerror = (e) => {
+      console.error('[DEBUG] OpenCV iframe load error:', e);
+    };
   });
   return sb.readyPromise;
 };
 
 window.__opencvDetectInSandbox = async function __opencvDetectInSandbox(imageData, width, height, options){
+  console.log('[DEBUG] __opencvDetectInSandbox called, image size:', width, 'x', height);
   const sb = await window.__ensureCvSandboxReady();
+  console.log('[DEBUG] Sandbox ready status:', sb.ready);
+  if (!sb.ready) {
+    console.warn('[DEBUG] Sandbox not ready, returning error');
+    return { ok: false, error: 'sandbox not ready' };
+  }
   const run = () => new Promise((resolve)=>{
     let finished = false;
-    const done = (val)=>{ if (finished) return; finished = true; try{ window.removeEventListener('message', onMsg); }catch(_){} resolve(val); };
-    const onMsg = (ev)=>{ try{ if (ev.source === sb.win && ev.data && ev.data.type === 'opencvResult'){ done(ev.data); } }catch(_){}}
+    const done = (val)=>{ 
+      if (finished) return; 
+      finished = true; 
+      console.log('[DEBUG] OpenCV detection result:', val);
+      try{ window.removeEventListener('message', onMsg); }catch(_){} 
+      resolve(val); 
+    };
+    const onMsg = (ev)=>{ 
+      try{ 
+        if (ev.source === sb.win && ev.data && ev.data.type === 'opencvResult'){ 
+          console.log('[DEBUG] Received opencvResult message');
+          done(ev.data); 
+        } 
+      }catch(err){
+        console.error('[DEBUG] Error in opencvResult handler:', err);
+      }
+    }
     window.addEventListener('message', onMsg);
     try {
       const clone = new ImageData(new Uint8ClampedArray(imageData.data), imageData.width, imageData.height);
+      console.log('[DEBUG] Posting message to sandbox');
       sb.win.postMessage({ type:'opencvDetect', imageData: clone, canvasWidth: width, canvasHeight: height, options: options||{} }, '*');
-      setTimeout(() => done({ ok:false, error: 'opencv sandbox timeout' }), 5000);
-    } catch(_){ done({ ok:false, error:'postMessage failed' }); }
+      setTimeout(() => {
+        console.warn('[DEBUG] OpenCV detection timeout after 5s');
+        done({ ok:false, error: 'opencv sandbox timeout' });
+      }, 5000);
+    } catch(err){ 
+      console.error('[DEBUG] postMessage failed:', err);
+      done({ ok:false, error:'postMessage failed: ' + err.message }); 
+    }
   });
   sb.queue = sb.queue.then(() => run());
   return sb.queue;
@@ -1071,11 +1127,17 @@ window.convertPageToPng = async function convertPageToPng(page, viewport, paper)
     try {
       const cvRes = await window.__opencvDetectInSandbox(imgDataForModel, w, h, {});
       if (cvRes && cvRes.ok) {
+        console.log('[DEBUG] OpenCV detection successful');
         result = cvRes;
+      } else {
+        console.warn('[DEBUG] OpenCV detection failed or returned not ok:', cvRes);
       }
-    } catch(_){ /* ignore */ }
+    } catch(err){ 
+      console.error('[DEBUG] OpenCV detection threw error:', err);
+    }
     if (!result || !result.ok) {
       // フォールバック: ピュアJS（Python式）
+      console.log('[DEBUG] Falling back to Python-style detection');
       result = window.detectPhotoRegionsPythonStyle(imgDataForModel, w, h);
     }
   } catch (e) {
@@ -1205,11 +1267,27 @@ window.__viewer_applyDarkMode = async function __viewer_applyDarkMode(enabled){
     const holder = (window.__viewer_ui && window.__viewer_ui.pagesHolder) || document.getElementById('viewer-pages');
     if (!holder) return;
     const pages = holder.querySelectorAll('.page');
+    
+    // 現在のモード（overlay/svg）を取得
+    let currentMode = 'svg';
+    try { currentMode = localStorage.getItem('viewerTextMode') || 'svg'; } catch(_) {}
+    
     pages.forEach(pageDiv => {
       const paper = pageDiv.querySelector('.paper');
       if (!paper) return;
       const svg = paper.querySelector('svg');
       const canvases = paper.querySelectorAll('canvas');
+      const textLayer = pageDiv.querySelector('.textLayer');
+      
+      // オーバーレイモードの場合、テキストレイヤーの色を更新
+      if (currentMode === 'overlay' && textLayer) {
+        const overlayColor = enabled ? '#e0e0e0' : '#222222';
+        textLayer.querySelectorAll('span').forEach(s => {
+          s.style.setProperty('color', overlayColor, 'important');
+          s.style.setProperty('-webkit-text-fill-color', overlayColor, 'important');
+        });
+      }
+      
       if (enabled) {
         // ON: SVG にスマート反転（背景黒化）を再適用。既存で処理済みならスキップ。
         if (svg && !svg.__darkApplied) {
