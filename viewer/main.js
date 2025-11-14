@@ -55,7 +55,7 @@ window.startViewer = async function startViewer(){
   } catch(_) {}
 
   //ページ数反映
-  try { if (ui && ui.pageTotal) ui.pageTotal.textContent = `/ ${pdf.numPages-1}`;} catch(_) {}
+  try { if (ui && ui.pageTotal) ui.pageTotal.textContent = `/ ${pdf.numPages}`;} catch(_) {}
 
   // ハイライトトグルボタン追加 + 監視
   try { window.ensureHighlightToggle(ui); } catch(_) {}
