@@ -28,6 +28,7 @@ window.scrollToPageTopByIndex = function scrollToPageTopByIndex(pageIdx, options
       const rect = contentElem.getBoundingClientRect();
       const toolbarHeight = (ui && ui.toolbar) ? ui.toolbar.getBoundingClientRect().height : 0;
       const targetY = window.scrollY + rect.top - toolbarHeight - opts.extraGap;
+      console.log('scrollY', window.scrollY, 'top:', rect.top, 'toolbarHeihgt', toolbarHeight, 'extraGap', opts.extraGap);
       window.scrollTo({ top: Math.max(0, Math.round(targetY)), behavior: opts.behavior });
       return;
     }

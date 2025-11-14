@@ -65,6 +65,28 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
       requestAnimationFrame(() => requestAnimationFrame(centerHorizontally));
     }
   }
+  let defaultValue;
+  function calcPages(){
+    const { wrapper, pagesHolder, ui } = window._getWrapperAndPagesHolder();
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const pages = Array.from(pagesHolder.querySelectorAll('.page'));
+    const pageDiv = pages[0];
+    let contentElem = pageDiv.querySelector('.paper') || pageDiv.querySelector('svg') || pageDiv;
+    const contentRect = contentElem.getBoundingClientRect();
+    const rect = contentElem.getBoundingClientRect();
+    const toolbarHeight = (ui && ui.toolbar) ? ui.toolbar.getBoundingClientRect().height : 0;
+    const scrollHeight = -(contentRect.top - toolbarHeight);
+    const defaultValue = scrollHeight/contentRect.height;
+    return defaultValue;
+  }
+  ui.wrapper.addEventListener('scroll', () => {defaultValue = calcPages();console.log(defaultValue);ui.pageInput.value = Math.round(defaultValue)+1;})
+
+  
+  
+  
+
+
+
   function fitWidth(){ const viewportWidth = ui.wrapper.clientWidth - 40; const first = ui.pagesHolder.querySelector('.page'); if (!first) return; const baseW = parseFloat(first.getAttribute('data-base-width') || first.style.width || first.clientWidth); const targetScale = Math.max(0.1, viewportWidth / baseW); applyScaleToAllPages(targetScale); }
   function fitPage(){ const viewportHeight = ui.wrapper.clientHeight - ui.toolbar.clientHeight - 40; const first = ui.pagesHolder.querySelector('.page'); if (!first) return; const baseH = parseFloat(first.getAttribute('data-base-height') || first.style.height || first.clientHeight); const targetScale = Math.max(0.1, viewportHeight / baseH); applyScaleToAllPages(targetScale); }
   function goToPage(n){ const { pagesHolder, ui: ui2 } = window._getWrapperAndPagesHolder(); const pages = Array.from(pagesHolder.querySelectorAll('.page')); if (!pages.length) return; const idx = Math.min(Math.max(1, n), pages.length); if (ui2 && ui2.pageInput) ui2.pageInput.value = idx; window.scrollToPageTopByIndex(n, { behavior: 'smooth', extraGap: -50, waitForRender: true }); }
@@ -74,6 +96,7 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   ui.btnFitWidth.addEventListener('click', fitWidth); ui.btnFitPage.addEventListener('click', fitPage);
   //ui.btnNext.addEventListener('click', () => { goToPage(parseInt(ui.pageInput.value||'1',10) + 1); });
   //ui.btnPrev.addEventListener('click', () => { goToPage(parseInt(ui.pageInput.value||'1',10) - 1); });
+
   ui.pageInput.addEventListener('change', () => { goToPage(parseInt(ui.pageInput.value||'1',10)); });
   // Print button removed
   ui.zoomVal.addEventListener('change', () => { const raw = ui.zoomVal.value.trim().replace('%',''); const n = parseFloat(raw); if (!isFinite(n) || n <= 0) { ui.zoomVal.value = Math.round(currentScale * 100) + '%'; return; } applyScaleToAllPages(Math.max(0.1, n / 100)); });
