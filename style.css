@@ -194,16 +194,21 @@ input::-webkit-inner-spin-button {
     position: fixed;
     right: 0px;
     top: 56px;
-    gap: 15px; /* 各項目の間隔 */
-    padding: 10px;
+    
     background-color: #3C3C3C;
     border: 1px solid #ccc;
     border-radius: 5px;
 }
 
+.menu-boxes{
+    display: flex;
+    gap: 15px; /* 各項目の間隔 */
+    padding: 10px;
+}
+
 /* 3. JavaScriptによってこのクラスが追加されると表示される */
 .menu-container.show {
-    display: flex;
+    display: block;
 }
 
 #highlighticon.yellow{
