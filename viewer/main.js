@@ -149,6 +149,14 @@ window.startViewer = async function startViewer(){
       paper.style.height = viewport.height + 'px';
       paper.style.transformOrigin = '0 0';
       const footer = document.createElement('div'); footer.className = 'page-footer'; footer.textContent = `Page ${p} / ${pdf.numPages}`;
+      
+      // ページラッパー（page + footer を含む）
+      const pageWrapper = document.createElement('div');
+      pageWrapper.className = 'page-wrapper';
+      pageWrapper.style.display = 'flex';
+      pageWrapper.style.flexDirection = 'column';
+      pageWrapper.style.alignItems = 'center';
+      pageWrapper.style.gap = '8px';
 
       // 常にSVG描画を使用（allowCopy=false でもベクター表示を維持）
       if (hasAnyText) {
@@ -161,8 +169,9 @@ window.startViewer = async function startViewer(){
         } catch(_) {}
         paper.appendChild(svg);
         pageDiv.appendChild(paper);
-        pageDiv.appendChild(footer);
-        container.appendChild(pageDiv);
+        pageWrapper.appendChild(pageDiv);
+        pageWrapper.appendChild(footer);
+        container.appendChild(pageWrapper);
 
         // ここから描画後の調整（ダークモードON時のみスマート反転）
         if (window.__viewer_darkModeEnabled) {
@@ -187,8 +196,9 @@ window.startViewer = async function startViewer(){
           console.warn('convertPageToPng error', e);
         }
         pageDiv.appendChild(paper);
-        pageDiv.appendChild(footer);
-        container.appendChild(pageDiv);
+        pageWrapper.appendChild(pageDiv);
+        pageWrapper.appendChild(footer);
+        container.appendChild(pageWrapper);
       }
       if (hasText) {
         const wantForceVisible = (curMode === 'overlay');
