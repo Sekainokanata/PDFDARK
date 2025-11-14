@@ -35,8 +35,23 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   const ui = window.__viewer_ui; if (!ui) return;
   let currentScale = 1.0;
   function applyScaleToAllPages(scale){
-    // 目標スケールを適用した後、横スクロール位置を中央に調整する
+    // スクロール位置を保持するための計算
     const wrapper = ui.wrapper;
+    
+    // 現在のスクロール位置とビューポート中心を記録
+    const oldScrollLeft = wrapper.scrollLeft;
+    const oldScrollTop = wrapper.scrollTop;
+    const oldScale = currentScale;
+    
+    // ビューポートの中心座標（スケール変更前の座標系）
+    const centerX = oldScrollLeft + wrapper.clientWidth / 2;
+    const centerY = oldScrollTop + wrapper.clientHeight / 2;
+    
+    // チラつき防止: スクロール位置を事前計算して即座に適用
+    const scaleRatio = scale / oldScale;
+    const newScrollLeft = centerX * scaleRatio - wrapper.clientWidth / 2;
+    const newScrollTop = centerY * scaleRatio - wrapper.clientHeight / 2;
+    
     const pages = ui.pagesHolder.querySelectorAll('.page');
     pages.forEach(pageDiv => {
       const baseW = parseFloat(pageDiv.getAttribute('data-base-width') || pageDiv.style.width || pageDiv.clientWidth) || 0;
@@ -53,16 +68,26 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     });
     currentScale = scale; ui.zoomVal.value = Math.round(scale * 100) + '%';
 
-    // レイアウト反映後に中央へスクロール（横方向）
-    if (wrapper) {
-      const centerHorizontally = () => {
-        try {
-          const maxLeft = Math.max(0, wrapper.scrollWidth - wrapper.clientWidth);
-          wrapper.scrollLeft = Math.round(maxLeft / 2);
-        } catch(_) {}
-      };
-      // レイアウト計算が終わるタイミングで反映
-      requestAnimationFrame(() => requestAnimationFrame(centerHorizontally));
+    // スクロール位置を即座に適用（レイアウト反映を待たずに）
+    if (wrapper && oldScale > 0) {
+      // 同期的にスクロール位置を更新
+      wrapper.scrollLeft = Math.max(0, newScrollLeft);
+      wrapper.scrollTop = Math.max(0, newScrollTop);
+      
+      // レイアウト確定後に微調整（範囲外の場合の補正）
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          try {
+            const maxScrollLeft = Math.max(0, wrapper.scrollWidth - wrapper.clientWidth);
+            const maxScrollTop = Math.max(0, wrapper.scrollHeight - wrapper.clientHeight);
+            
+            wrapper.scrollLeft = Math.max(0, Math.min(newScrollLeft, maxScrollLeft));
+            wrapper.scrollTop = Math.max(0, Math.min(newScrollTop, maxScrollTop));
+          } catch(e) {
+            console.warn('Scroll position adjustment failed:', e);
+          }
+        });
+      });
     }
   }
   function fitWidth(){ const viewportWidth = ui.wrapper.clientWidth - 40; const first = ui.pagesHolder.querySelector('.page'); if (!first) return; const baseW = parseFloat(first.getAttribute('data-base-width') || first.style.width || first.clientWidth); const targetScale = Math.max(0.1, viewportWidth / baseW); applyScaleToAllPages(targetScale); }
