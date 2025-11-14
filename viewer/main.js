@@ -66,7 +66,8 @@ window.startViewer = async function startViewer(){
   const container = ui.pagesHolder;
 
   const permInfo = await window.detectCopyPermission(pdf);
-  const allowCopy = !!permInfo.canCopy; console.log('PDF permission raw:', permInfo.rawPerms, 'allowCopy:', allowCopy);
+  
+  const allowCopy = (permInfo.canCopy === null) ? true : !!permInfo; console.log('PDF permission raw:', permInfo.rawPerms, 'allowCopy:', allowCopy);
   let removeCopyBlockers = null;
   if (!allowCopy) {
     removeCopyBlockers = window.installCopyBlockers(container);
