@@ -135,7 +135,7 @@ html, body {
 
 /* textLayer overlay styling */
 .textLayer span {
-    font-family: "BIZ UDゴシック", "Yu Gothic", "Meiryo", sans-serif !important;
+    font-family: "Inter", "Roboto", "BIZ UDゴシック", "Yu Gothic", "Meiryo", sans-serif !important;
     white-space: pre;
 }
 
@@ -203,16 +203,21 @@ input::-webkit-inner-spin-button {
     position: fixed;
     right: 0px;
     top: 56px;
-    gap: 15px; /* 各項目の間隔 */
-    padding: 10px;
+    
     background-color: #3C3C3C;
     border: 1px solid #ccc;
     border-radius: 5px;
 }
 
+.menu-boxes{
+    display: flex;
+    gap: 15px; /* 各項目の間隔 */
+    padding: 10px;
+}
+
 /* 3. JavaScriptによってこのクラスが追加されると表示される */
 .menu-container.show {
-    display: flex;
+    display: block;
 }
 
 #highlighticon.yellow{
@@ -289,4 +294,41 @@ input::-webkit-inner-spin-button {
 #purpleHighlight{
     background-color: rgb(128, 0, 128)
 ;
+}
+
+.highlightSample{
+    font-size: 1.5rem;
+    margin: 10px;
+}
+
+.highlightSample.yellow{
+    background-color: #FFFF00;
+}
+
+.highlightSample.lightgreen{
+    background-color: #00FF00;
+}
+
+.highlightSample.skyblue{
+    background-color: #00FFFF;
+}
+
+.highlightSample.pink{
+    background-color: #FF00FF;
+}
+
+.highlightSample.red{
+    background-color: #ff0000;
+}
+
+.highlightSample.blue{
+    background-color: #0000FF;
+}
+
+.highlightSample.green{
+    background-color: #008000;
+}
+
+.highlightSample.purple{
+    background-color: #800080;
 }
