@@ -1283,8 +1283,15 @@ window.__viewer_applyDarkMode = async function __viewer_applyDarkMode(enabled){
       if (currentMode === 'overlay' && textLayer) {
         const overlayColor = enabled ? '#e0e0e0' : '#222222';
         textLayer.querySelectorAll('span').forEach(s => {
+          //const currentColor = s.style.getComputedStyle('color');
+          //const [r, g, b] = currentColor.match(/\d+/g).map(Number);
           s.style.setProperty('color', overlayColor, 'important');
           s.style.setProperty('-webkit-text-fill-color', overlayColor, 'important');
+          /*この部分を変更することで色変更が可能に
+          if (Math.abs(r-g) <= 3 && Math.abs(g-b) <= 3 && Math.abs(b-r) <= 3) {
+              s.style.setProperty('color', overlayColor, 'important');
+              s.style.setProperty('-webkit-text-fill-color', overlayColor, 'important');
+          }*/
         });
       }
       

@@ -162,11 +162,18 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
           const allowCopy = firstSpan ? (getComputedStyle(firstSpan).userSelect !== 'none') : false;
           
           console.log('[DEBUG] Overlay mode - allowCopy:', allowCopy, 'color:', overlayColor, 'spans:', textLayer.querySelectorAll('span').length);
-          
           textLayer.querySelectorAll('span').forEach(s => { 
             // 強制的に色を適用（透明を上書き）
+            // 3. 10進数のRGB値に変換
+            //const currentColor = s.style.getComputedStyle(); <=なぜかここを有効にするとsetPropertyがうまく動かない（エラーはなし）
+            //const [r, g, b] = currentColor.match(/\d+/g).map(Number);
             s.style.setProperty('color', overlayColor, 'important');
             s.style.setProperty('-webkit-text-fill-color', overlayColor, 'important');
+            /*この部分を有効にすることで色変更が可能に
+            if (Math.abs(r-g) <= 3 && Math.abs(g-b) <= 3 && Math.abs(b-r) <= 3) {
+              s.style.setProperty('color', overlayColor, 'important');
+              s.style.setProperty('-webkit-text-fill-color', overlayColor, 'important');
+            }*/
             // allowCopy=true の場合のみ選択可能、false なら表示のみ
             s.style.pointerEvents = allowCopy ? 'auto' : 'none';
             s.style.userSelect = allowCopy ? 'text' : 'none';
