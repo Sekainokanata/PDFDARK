@@ -8,6 +8,45 @@ window._getWrapperAndPagesHolder = function _getWrapperAndPagesHolder() {
   return { wrapper, pagesHolder, ui };
 };
 
+window.addEventListener('keydown', (event) => {
+  const { wrapper, pagesHolder, ui } = window._getWrapperAndPagesHolder();
+  // 押されたキーを判定
+  if (event.key === 'ArrowDown') {
+    // 現在位置から下にスクロール
+    wrapper.scrollBy({
+        top: 100,
+        left: 0,
+        behavior: 'smooth' // スムーズスクロール
+      });
+    
+  } else if (event.key === 'ArrowUp') {
+    
+    // 現在位置から上にスクロール
+    wrapper.scrollBy({
+        top: -100,
+        left: 0,
+        behavior: 'smooth' // スムーズスクロール
+      });
+  }
+  if (event.key === 'ArrowLeft') {
+    // 現在位置から下にスクロール
+    wrapper.scrollBy({
+        top: 100,
+        left: 0,
+        behavior: 'smooth' // スムーズスクロール
+      });
+    
+  } else if (event.key === 'ArrowRight') {
+    
+    // 現在位置から上にスクロール
+    wrapper.scrollBy({
+        top: -100,
+        left: 0,
+        behavior: 'smooth' // スムーズスクロール
+      });
+  }
+});
+
 // pageIdx: 1-based
 // options: { behavior:'auto'|'smooth', extraGap: number, waitForRender: boolean }
 window.scrollToPageTopByIndex = function scrollToPageTopByIndex(pageIdx, options = {}) {
