@@ -8,6 +8,8 @@ window._getWrapperAndPagesHolder = function _getWrapperAndPagesHolder() {
   return { wrapper, pagesHolder, ui };
 };
 
+function goToPage(n){ const { pagesHolder, ui: ui2 } = window._getWrapperAndPagesHolder(); const pages = Array.from(pagesHolder.querySelectorAll('.page')); if (!pages.length) return; const idx = Math.min(Math.max(1, n), pages.length); if (ui2 && ui2.pageInput) ui2.pageInput.value = idx; window.scrollToPageTopByIndex(n, { extraGap: -50, waitForRender: true }); }
+
 window.addEventListener('keydown', (event) => {
   const { wrapper, pagesHolder, ui } = window._getWrapperAndPagesHolder();
   // 押されたキーを判定
@@ -28,22 +30,10 @@ window.addEventListener('keydown', (event) => {
         behavior: 'smooth' // スムーズスクロール
       });
   }
-  if (event.key === 'ArrowLeft') {
-    // 現在位置から下にスクロール
-    wrapper.scrollBy({
-        top: 100,
-        left: 0,
-        behavior: 'smooth' // スムーズスクロール
-      });
-    
+  else if (event.key === 'ArrowLeft') {
+    goToPage(parseInt(ui.pageInput.value||'1',10) - 1);
   } else if (event.key === 'ArrowRight') {
-    
-    // 現在位置から上にスクロール
-    wrapper.scrollBy({
-        top: -100,
-        left: 0,
-        behavior: 'smooth' // スムーズスクロール
-      });
+    goToPage(parseInt(ui.pageInput.value||'1',10) + 1);
   }
 });
 
