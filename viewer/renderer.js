@@ -47,7 +47,7 @@ window.pickForegroundForBackground = function pickForegroundForBackground(bgRgb)
   function srgbToLinearChannel(c) { const v = c / 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
   function relativeLuminance(rgb) { const R = srgbToLinearChannel(rgb.r), G = srgbToLinearChannel(rgb.g), B = srgbToLinearChannel(rgb.b); return 0.2126 * R + 0.7152 * G + 0.0722 * B; }
   const lum = relativeLuminance(bgRgb);
-  return lum > 0.5 ? '#1E1E1E' : '#E0E0E0';
+  return lum > 0.5 ? 'rgba(30, 30, 30, 1)' : 'rgba(224, 224, 224, 1)';
 };
 
 // 既存のスマート反転（簡略化しつつコピペ）。ここでは svg 内の文字など非彩色要素を黒背景に映える色へ置換
@@ -58,7 +58,7 @@ window.invertSvgColorsSmart = function invertSvgColorsSmart(svg, options = {}) {
     if (hexMatch) { let hex = hexMatch[1]; if (hex.length === 3) hex = hex.split('').map(c => c + c).join(''); const num = parseInt(hex, 16); return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255, a: 1 }; }
     const rgbMatch = str.match(/^rgba?\(([^)]+)\)$/);
     if (rgbMatch) { const parts = rgbMatch[1].split(',').map(s => s.trim()); const r = parseFloat(parts[0]), g = parseFloat(parts[1]), b = parseFloat(parts[2]); const a = parts[3] !== undefined ? parseFloat(parts[3]) : 1; return { r, g, b, a }; }
-    const kw = { black: { r: 0, g: 0, b: 0, a: 1 }, white: { r: 255, g: 255, b: 255, a: 1 }, gray: { r: 128, g: 128, b: 128, a: 1 }, grey: { r: 128, g: 128, b: 128, a: 1 } };
+    const kw = { black: { r: 30, g: 30, b: 30, a: 1 }, white: { r: 244, g: 244, b: 244, a: 1 }, gray: { r: 128, g: 128, b: 128, a: 1 }, grey: { r: 128, g: 128, b: 128, a: 1 } };
     if (kw[str]) return kw[str]; return null;
   }
   function rgbToHsl(r, g, b) { r/=255; g/=255; b/=255; const max=Math.max(r,g,b), min=Math.min(r,g,b); let h=0,s=0,l=(max+min)/2; if(max!==min){ const d=max-min; s=l>0.5?d/(2-max-min):d/(max+min); switch(max){case r:h=(g-b)/d+(g<b?6:0);break;case g:h=(b-r)/d+2;break;case b:h=(r-g)/d+4;break;} h/=6;} return{h,s,l}; }
@@ -242,7 +242,7 @@ window.processSvgImagesHighQuality = async function processSvgImagesHighQuality(
       try {
         const fW = fullBitmap.width, fH = fullBitmap.height; const canvas = document.createElement('canvas'); canvas.width = fW; canvas.height = fH; const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(fullBitmap, 0, 0, fW, fH);
         let fullImgData; try { fullImgData = ctx.getImageData(0, 0, fW, fH); } catch(e){ console.warn('getImageData(full) failed', e); fullBitmap.close?.(); imgEl.style.filter = 'invert(1)'; continue; }
-        const fdata = fullImgData.data; for (let i=0;i<fdata.length;i+=4){ const a=fdata[i+3]/255; if(a===0) continue; let r=fdata[i]/a, g=fdata[i+1]/a, b=fdata[i+2]/a; r=255-r; g=255-g; b=255-b; fdata[i]=Math.round(r*a); fdata[i+1]=Math.round(g*a); fdata[i+2]=Math.round(b*a); }
+        const fdata = fullImgData.data; for (let i=0;i<fdata.length;i+=4){ const a=fdata[i+3]/255; if(a===0) continue; let r=fdata[i]/a, g=fdata[i+1]/a, b=fdata[i+2]/a; r=30+(255-r)*214/255; g=30+(255-g)*214/255; b=30+(255-b)*214/255; fdata[i]=Math.round(r*a); fdata[i+1]=Math.round(g*a); fdata[i+2]=Math.round(b*a); }
         ctx.putImageData(fullImgData, 0, 0); const blobOut = await new Promise(res=>canvas.toBlob(res, 'image/png')); if(!blobOut) throw new Error('toBlob returned null'); const objUrl = URL.createObjectURL(blobOut); const prev = objectUrlMap.get(imgEl); if(prev && prev.url && prev.revokeOnNext && prev.url.startsWith('blob:')) URL.revokeObjectURL(prev.url); imgEl.setAttribute('href', objUrl); imgEl.setAttributeNS('http://www.w3.org/1999/xlink', 'href', objUrl); objectUrlMap.set(imgEl, { url: objUrl, revokeOnNext: true });
         imgEl.setAttribute('data-dm-image-inverted', '1');
       } catch(e){ console.warn('full invert failed', e); imgEl.style.filter='invert(1)'; } finally { fullBitmap.close?.(); }
@@ -1182,9 +1182,9 @@ window.convertPageToPng = async function convertPageToPng(page, viewport, paper)
       } catch(_) {}
       // いったん全面を反転
       for (let i = 0; i < out.length; i += 4) {
-        out[i] = 255 - out[i];
-        out[i+1] = 255 - out[i+1];
-        out[i+2] = 255 - out[i+2];
+        out[i] = 30+(255 - out[i])*214/255;
+        out[i+1] = 30+(255 - out[i+1])*214/255;
+        out[i+2] = 30+(255 - out[i+2])*214/255;
         // alphaは維持
       }
       // ボックス内は元画像を復元
@@ -1229,7 +1229,7 @@ window.convertPageToPng = async function convertPageToPng(page, viewport, paper)
       // それ以外は全面反転
       try {
         const d = imgData.data;
-        for (let i=0;i<d.length;i+=4){ const a=d[i+3]/255; if(a===0) continue; let r=d[i]/a,g=d[i+1]/a,b=d[i+2]/a; r=255-r; g=255-g; b=255-b; d[i]=Math.round(r*a); d[i+1]=Math.round(g*a); d[i+2]=Math.round(b*a); }
+        for (let i=0;i<d.length;i+=4){ const a=d[i+3]/255; if(a===0) continue; let r=d[i]/a,g=d[i+1]/a,b=d[i+2]/a; r=30+(255-r)*214/255; g=30+(255-g)*214/255; b=30+(255-b)*214/255; d[i]=Math.round(r*a); d[i+1]=Math.round(g*a); d[i+2]=Math.round(b*a); }
         ctx.putImageData(imgData, 0, 0);
         try { console.log('[InvertDebug] fallback: full invert (no boxes & not photo-like)'); } catch(_) {}
       } catch(e){ canvas.style.filter = 'invert(1)'; }
@@ -1237,7 +1237,7 @@ window.convertPageToPng = async function convertPageToPng(page, viewport, paper)
       // 失敗時は全面反転
       try {
         const d = imgData.data;
-        for (let i=0;i<d.length;i+=4){ const a=d[i+3]/255; if(a===0) continue; let r=d[i]/a,g=d[i+1]/a,b=d[i+2]/a; r=255-r; g=255-g; b=255-b; d[i]=Math.round(r*a); d[i+1]=Math.round(g*a); d[i+2]=Math.round(b*a); }
+        for (let i=0;i<d.length;i+=4){ const a=d[i+3]/255; if(a===0) continue; let r=d[i]/a,g=d[i+1]/a,b=d[i+2]/a; r=30+(255-r)*214/255; g=30+(255-g)*214/255; b=30+(255-b)*214/255; d[i]=Math.round(r*a); d[i+1]=Math.round(g*a); d[i+2]=Math.round(b*a); }
         ctx.putImageData(imgData, 0, 0);
         try { console.log('[InvertDebug] fallback: full invert (applySelectiveInvert failed)'); } catch(_) {}
       } catch(e){ canvas.style.filter = 'invert(1)'; }
@@ -1247,7 +1247,7 @@ window.convertPageToPng = async function convertPageToPng(page, viewport, paper)
     try {
       try { console.warn('[InvertDebug] detection error detail:', result && result.error); } catch(_) {}
       const d = imgData.data;
-      for (let i=0;i<d.length;i+=4){ const a=d[i+3]/255; if(a===0) continue; let r=d[i]/a,g=d[i+1]/a,b=d[i+2]/a; r=255-r; g=255-g; b=255-b; d[i]=Math.round(r*a); d[i+1]=Math.round(g*a); d[i+2]=Math.round(b*a); }
+      for (let i=0;i<d.length;i+=4){ const a=d[i+3]/255; if(a===0) continue; let r=d[i]/a,g=d[i+1]/a,b=d[i+2]/a; r=30+(255-r)*214/255; g=30+(255-g)*214/255; b=30+(255-b)*214/255; d[i]=Math.round(r*a); d[i+1]=Math.round(g*a); d[i+2]=Math.round(b*a); }
       ctx.putImageData(imgData, 0, 0);
       try { console.log('[InvertDebug] fallback: full invert (detection not ok)'); } catch(_) {}
     } catch(e){ canvas.style.filter = 'invert(1)'; }
@@ -1326,7 +1326,7 @@ window.__viewer_applyDarkMode = async function __viewer_applyDarkMode(enabled){
             const boxesPx = Array.isArray(det.boxes) ? det.boxes : (det.box ? [det.box] : []);
             const data = new Uint8ClampedArray(imgData.data);
             // まず全体を反転
-            for (let i=0;i<data.length;i+=4){ data[i]=255-data[i]; data[i+1]=255-data[i+1]; data[i+2]=255-data[i+2]; }
+            for (let i=0;i<data.length;i+=4){ data[i]=30+(255-data[i])*214/255; data[i+1]=30+(255-data[i+1])*214/255; data[i+2]=30+(255-data[i+2])*214/255; }
             if (boxesPx.length) {
               const W = imgData.width, H = imgData.height;
               for (const b of boxesPx) {
