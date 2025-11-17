@@ -34,11 +34,20 @@ window.wireDownloadButton = function wireDownloadButton(ui){
 window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   const ui = window.__viewer_ui; if (!ui) return;
   let currentScale = 1.0;
+  let isScaling = false; // 連続拡大縮小の制御フラグ
+  let pendingScale = null; // 保留中のスケール値
+  
   function applyScaleToAllPages(scale){
-    // スクロール位置を保持するための計算
+    // 既にスケール処理中の場合、最新の値を保留して終了
+    if (isScaling) {
+      pendingScale = scale;
+      return;
+    }
+    
+    isScaling = true;
     const wrapper = ui.wrapper;
     
-    // 現在のスクロール位置とビューポート中心を記録
+    // 現在のスクロール位置とビューポート中心を記録（確定値）
     const oldScrollLeft = wrapper.scrollLeft;
     const oldScrollTop = wrapper.scrollTop;
     const oldScale = currentScale;
@@ -47,7 +56,7 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     const centerX = oldScrollLeft + wrapper.clientWidth / 2;
     const centerY = oldScrollTop + wrapper.clientHeight / 2;
     
-    // チラつき防止: スクロール位置を事前計算して即座に適用
+    // スクロール位置を事前計算
     const scaleRatio = scale / oldScale;
     const newScrollLeft = centerX * scaleRatio - wrapper.clientWidth / 2;
     const newScrollTop = centerY * scaleRatio - wrapper.clientHeight / 2;
@@ -66,15 +75,17 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
         paper.style.transformOrigin = '0 0';
       }
     });
-    currentScale = scale; ui.zoomVal.value = Math.round(scale * 100) + '%';
+    
+    // currentScale を即座に更新（次の呼び出しで正しい値を使うため）
+    currentScale = scale; 
+    ui.zoomVal.value = Math.round(scale * 100) + '%';
 
-    // スクロール位置を即座に適用（レイアウト反映を待たずに）
+    // スクロール位置を即座に適用
     if (wrapper && oldScale > 0) {
-      // 同期的にスクロール位置を更新
       wrapper.scrollLeft = Math.max(0, newScrollLeft);
       wrapper.scrollTop = Math.max(0, newScrollTop);
       
-      // レイアウト確定後に微調整（範囲外の場合の補正）
+      // レイアウト確定後に微調整と次の処理
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           try {
@@ -86,8 +97,23 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
           } catch(e) {
             console.warn('Scroll position adjustment failed:', e);
           }
+          
+          // 処理完了、保留中のスケール値があれば適用
+          isScaling = false;
+          if (pendingScale !== null) {
+            const nextScale = pendingScale;
+            pendingScale = null;
+            applyScaleToAllPages(nextScale);
+          }
         });
       });
+    } else {
+      isScaling = false;
+      if (pendingScale !== null) {
+        const nextScale = pendingScale;
+        pendingScale = null;
+        applyScaleToAllPages(nextScale);
+      }
     }
   }
   let defaultValue;
