@@ -301,7 +301,16 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
         svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
       } catch(_) {}
     } else {
-      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+      try { 
+        window.restoreAllPagesHighlights(); 
+        colorflag=0;
+        // アイコンとサンプルの色をリセット
+        const highlightIcon = document.getElementById('highlighticon');
+        const highlightSample = document.querySelector('.highlightSample');
+        if (highlightIcon) highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        if (highlightSample) highlightSample.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        ui.yellowHighlight.classList.remove('selected');
+      } catch(_) {}
     }
   });
   ui.lightgreenHighlight.addEventListener('click', () => {
@@ -313,7 +322,16 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
         svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
       } catch(_) {}
     } else {
-      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+      try { 
+        window.restoreAllPagesHighlights(); 
+        colorflag=0;
+        // アイコンとサンプルの色をリセット
+        const highlightIcon = document.getElementById('highlighticon');
+        const highlightSample = document.querySelector('.highlightSample');
+        if (highlightIcon) highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        if (highlightSample) highlightSample.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        ui.lightgreenHighlight.classList.remove('selected');
+      } catch(_) {}
     }
   });
   ui.skyblueHighlight.addEventListener('click', () => {
@@ -325,7 +343,16 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
         svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
       } catch(_) {}
     } else {
-      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+      try { 
+        window.restoreAllPagesHighlights(); 
+        colorflag=0;
+        // アイコンとサンプルの色をリセット
+        const highlightIcon = document.getElementById('highlighticon');
+        const highlightSample = document.querySelector('.highlightSample');
+        if (highlightIcon) highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        if (highlightSample) highlightSample.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        ui.skyblueHighlight.classList.remove('selected');
+      } catch(_) {}
     }
   });
   ui.pinkHighlight.addEventListener('click', () => {
@@ -337,7 +364,16 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
         svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
       } catch(_) {}
     } else {
-      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+      try { 
+        window.restoreAllPagesHighlights(); 
+        colorflag=0;
+        // アイコンとサンプルの色をリセット
+        const highlightIcon = document.getElementById('highlighticon');
+        const highlightSample = document.querySelector('.highlightSample');
+        if (highlightIcon) highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        if (highlightSample) highlightSample.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        ui.pinkHighlight.classList.remove('selected');
+      } catch(_) {}
     }
   });
   ui.redHighlight.addEventListener('click', () => {
@@ -354,7 +390,16 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
         svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
       } catch(_) {}
     } else {
-      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+      try { 
+        window.restoreAllPagesHighlights(); 
+        colorflag=0;
+        // アイコンとサンプルの色をリセット
+        const highlightIcon = document.getElementById('highlighticon');
+        const highlightSample = document.querySelector('.highlightSample');
+        if (highlightIcon) highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        if (highlightSample) highlightSample.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        ui.redHighlight.classList.remove('selected');
+      } catch(_) {}
     }
   });
   ui.blueHighlight.addEventListener('click', () => {
@@ -366,7 +411,16 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
         svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
       } catch(_) {}
     } else {
-      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+      try { 
+        window.restoreAllPagesHighlights(); 
+        colorflag=0;
+        // アイコンとサンプルの色をリセット
+        const highlightIcon = document.getElementById('highlighticon');
+        const highlightSample = document.querySelector('.highlightSample');
+        if (highlightIcon) highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        if (highlightSample) highlightSample.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        ui.blueHighlight.classList.remove('selected');
+      } catch(_) {}
     }
   });
   ui.greenHighlight.addEventListener('click', () => {
@@ -378,7 +432,16 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
         svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
       } catch(_) {}
     } else {
-      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+      try { 
+        window.restoreAllPagesHighlights(); 
+        colorflag=0;
+        // アイコンとサンプルの色をリセット
+        const highlightIcon = document.getElementById('highlighticon');
+        const highlightSample = document.querySelector('.highlightSample');
+        if (highlightIcon) highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        if (highlightSample) highlightSample.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        ui.greenHighlight.classList.remove('selected');
+      } catch(_) {}
     }
   });
   ui.purpleHighlight.addEventListener('click', () => {
@@ -390,7 +453,16 @@ window.ensureHighlightToggle = function ensureHighlightToggle(ui){
         svgs.forEach(svg => { try { window.remapHighlightsInSvg(svg); } catch(_){} });
       } catch(_) {}
     } else {
-      try { window.restoreAllPagesHighlights(); colorflag=0;} catch(_) {}
+      try { 
+        window.restoreAllPagesHighlights(); 
+        colorflag=0;
+        // アイコンとサンプルの色をリセット
+        const highlightIcon = document.getElementById('highlighticon');
+        const highlightSample = document.querySelector('.highlightSample');
+        if (highlightIcon) highlightIcon.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        if (highlightSample) highlightSample.classList.remove('yellow', 'lightgreen', 'skyblue', 'pink', 'red', 'blue', 'green', 'purple');
+        ui.purpleHighlight.classList.remove('selected');
+      } catch(_) {}
     }
   });
   ui.btnHighlightToggle.__wired = true;
