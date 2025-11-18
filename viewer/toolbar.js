@@ -118,16 +118,18 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   }
   let defaultValue;
   function calcPages(){
+    //ページ数が1以下ならスクロールによる変更はないためページ数１を返す
     const { wrapper, pagesHolder, ui } = window._getWrapperAndPagesHolder();
-    const wrapperRect = wrapper.getBoundingClientRect();
+    if(ui.pageTotal<=1){return 1;}
     const pages = Array.from(pagesHolder.querySelectorAll('.page'));
-    const pageDiv = pages[0];
-    let contentElem = pageDiv.querySelector('.paper') || pageDiv.querySelector('svg') || pageDiv;
-    const contentRect = contentElem.getBoundingClientRect();
-    const rect = contentElem.getBoundingClientRect();
-    const toolbarHeight = (ui && ui.toolbar) ? ui.toolbar.getBoundingClientRect().height : 0;
-    const scrollHeight = -(contentRect.top - toolbarHeight);
-    const defaultValue = scrollHeight/contentRect.height;
+    const pageDiv1 = pages[0];
+    let contentElem1 = pageDiv1.querySelector('.paper') || pageDiv1.querySelector('svg') || pageDiv1;
+    const contentRect1 = contentElem1.getBoundingClientRect();
+    const pageDiv2 = pages[1];
+    let contentElem2 = pageDiv2.querySelector('.paper') || pageDiv2.querySelector('svg') || pageDiv2;
+    const contentRect2 = contentElem2.getBoundingClientRect();
+    const defaultValue = wrapper.scrollTop/(contentRect2.top-contentRect1.top)-0.5;
+    console.log(defaultValue);
     return defaultValue;
   }
   ui.wrapper.addEventListener('scroll', () => {defaultValue = calcPages();console.log(defaultValue);ui.pageInput.value = Math.round(defaultValue)+1;})
