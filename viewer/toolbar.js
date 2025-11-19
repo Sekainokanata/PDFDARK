@@ -130,7 +130,7 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     const defaultValue = scrollHeight/contentRect.height;
     return defaultValue;
   }
-  ui.wrapper.addEventListener('scroll', () => {defaultValue = calcPages();console.log(defaultValue);ui.pageInput.value = Math.round(defaultValue)+1;})
+  ui.wrapper.addEventListener('scroll', () => {defaultValue = calcPages();ui.pageInput.value = Math.round(defaultValue)+1;})
 
   
   
