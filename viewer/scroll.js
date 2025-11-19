@@ -16,7 +16,7 @@ window.addEventListener('keydown', (event) => {
   if (event.key === 'ArrowDown') {
     // 現在位置から下にスクロール
     wrapper.scrollBy({
-        top: 100,
+        top: 50,
         left: 0,
         behavior: 'smooth' // スムーズスクロール
       });
@@ -25,7 +25,7 @@ window.addEventListener('keydown', (event) => {
     
     // 現在位置から上にスクロール
     wrapper.scrollBy({
-        top: -100,
+        top: -50,
         left: 0,
         behavior: 'smooth' // スムーズスクロール
       });
