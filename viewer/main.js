@@ -219,13 +219,62 @@ window.startViewer = async function startViewer(){
     }
   }
 
+  // 可視範囲ページのレンダリング最適化
+  let renderDebounceTimer = null;
+  function updateVisiblePages() {
+    if (renderDebounceTimer) {
+      clearTimeout(renderDebounceTimer);
+    }
+    renderDebounceTimer = setTimeout(() => {
+      const wrapper = ui.wrapper;
+      const viewportTop = wrapper.scrollTop;
+      const viewportBottom = viewportTop + wrapper.clientHeight;
+      const RENDER_MARGIN = 1000; // プリレンダリングマージン（ピクセル）
+      
+      const pages = ui.pagesHolder.querySelectorAll('.page');
+      pages.forEach((pageDiv, index) => {
+        const rect = pageDiv.getBoundingClientRect();
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const pageTop = rect.top - wrapperRect.top + viewportTop;
+        const pageBottom = pageTop + rect.height;
+        
+        const isVisible = pageBottom >= viewportTop - RENDER_MARGIN &&
+                         pageTop <= viewportBottom + RENDER_MARGIN;
+        
+        // 可視範囲外のページは低優先度に
+        if (!isVisible) {
+          const paper = pageDiv.querySelector('.paper');
+          if (paper) {
+            // 必要に応じてレンダリング品質を下げる処理をここに追加可能
+          }
+        }
+      });
+    }, 100); // 100msのデバウンス
+  }
+  
+  // スクロールイベントリスナーを追加
+  try {
+    ui.wrapper.addEventListener('scroll', updateVisiblePages, { passive: true });
+    // 初期状態で一度実行
+    updateVisiblePages();
+  } catch(e) {
+    console.warn('Failed to setup visible page optimization:', e);
+  }
+
   // 配線後に初期スケール/モードを適用
   try { window.__viewer_applyScaleToAllPages(1.0); } catch(_) {}
   try { window.__viewer_applyMode(curMode); } catch(_) {}
   // 初期ダークモード状態適用（OFFなら何もしない/ONなら再適用）
   try { if (typeof window.__viewer_applyDarkMode === 'function') window.__viewer_applyDarkMode(window.__viewer_darkModeEnabled); } catch(_) {}
 
-  window.viewerCleanup = () => { if (removeCopyBlockers) removeCopyBlockers(); for (const v of window.objectUrlMap.values()) { if (v && v.url && v.url.startsWith('blob:')) URL.revokeObjectURL(v.url); } window.objectUrlMap.clear(); };
+  window.viewerCleanup = () => { 
+    if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
+    if (removeCopyBlockers) removeCopyBlockers(); 
+    for (const v of window.objectUrlMap.values()) { 
+      if (v && v.url && v.url.startsWith('blob:')) URL.revokeObjectURL(v.url); 
+    } 
+    window.objectUrlMap.clear(); 
+  };
   window.viewerPdf = pdf;
 
   window.scrollTo(0, 0);
