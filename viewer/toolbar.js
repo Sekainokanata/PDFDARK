@@ -129,7 +129,7 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     let contentElem2 = pageDiv2.querySelector('.paper') || pageDiv2.querySelector('svg') || pageDiv2;
     const contentRect2 = contentElem2.getBoundingClientRect();
     const defaultValue = wrapper.scrollTop/(contentRect2.top-contentRect1.top)-0.5;
-    console.log(defaultValue);
+    //console.log(defaultValue);
     return defaultValue;
   }
   ui.wrapper.addEventListener('scroll', () => {defaultValue = calcPages();ui.pageInput.value = Math.round(defaultValue)+1;})
