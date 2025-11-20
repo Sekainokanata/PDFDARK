@@ -36,8 +36,9 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   let currentScale = 1.0;
   let isScaling = false; // 連続拡大縮小の制御フラグ
   let pendingScale = null; // 保留中のスケール値
+  let highQualityRenderTimeout = null; // 高品質レンダリング用タイマー
   
-  function applyScaleToAllPages(scale){
+  function applyScaleToAllPages(scale, options = {}){
     // 既にスケール処理中の場合、最新の値を保留して終了
     if (isScaling) {
       pendingScale = scale;
@@ -62,17 +63,27 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     const newScrollTop = centerY * scaleRatio - wrapper.clientHeight / 2;
     
     const pages = ui.pagesHolder.querySelectorAll('.page');
+    
+    // ページサイズとtransformを同時に更新（レイアウトの一貫性を保つ）
     pages.forEach(pageDiv => {
       const baseW = parseFloat(pageDiv.getAttribute('data-base-width') || pageDiv.style.width || pageDiv.clientWidth) || 0;
       const baseH = parseFloat(pageDiv.getAttribute('data-base-height') || pageDiv.style.height || pageDiv.clientHeight) || 0;
+      
       // ページの外枠サイズを更新
       pageDiv.style.width = (baseW * scale) + 'px';
       pageDiv.style.height = (baseH * scale) + 'px';
-      // 紙は transform のみ変更（SVG の幅/高さは初期化時に固定）
+      
+      // paperのtransformを目標スケールに設定
       const paper = pageDiv.querySelector('.paper');
       if (paper) {
         paper.style.transform = `scale(${scale})`;
         paper.style.transformOrigin = '0 0';
+        paper.setAttribute('data-scale', scale);
+        
+        // 高品質レンダリング待ちフラグ（後で実際のサイズ変更が必要な場合用）
+        if (!options.skipQuickScale) {
+          paper.setAttribute('data-needs-quality-render', 'true');
+        }
       }
     });
     
@@ -104,6 +115,24 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
             const nextScale = pendingScale;
             pendingScale = null;
             applyScaleToAllPages(nextScale);
+          } else {
+            // 高品質レンダリングをスケジュール（操作が落ち着いてから）
+            // 注: 現在の実装ではCSS transformで十分な品質が得られるため、
+            // 追加の高品質レンダリングは省略。必要に応じて将来実装可能。
+            if (highQualityRenderTimeout) {
+              clearTimeout(highQualityRenderTimeout);
+            }
+            highQualityRenderTimeout = setTimeout(() => {
+              // 将来的にここで高解像度レンダリングなどを実装可能
+              const pages = ui.pagesHolder.querySelectorAll('.page');
+              pages.forEach(pageDiv => {
+                const paper = pageDiv.querySelector('.paper');
+                if (paper && paper.getAttribute('data-needs-quality-render') === 'true') {
+                  paper.removeAttribute('data-needs-quality-render');
+                  // 必要に応じてCanvasの再レンダリングなどを実行
+                }
+              });
+            }, 300); // 300ms後
           }
         });
       });
@@ -116,6 +145,7 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
       }
     }
   }
+  
   let defaultValue;
   function calcPages(){
     //ページ数が1以下ならスクロールによる変更はないためページ数１を返す
