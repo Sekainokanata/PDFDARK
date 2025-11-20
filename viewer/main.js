@@ -79,6 +79,10 @@ window.startViewer = async function startViewer(){
 
   const curMode = (function(){ try { return localStorage.getItem('viewerTextMode') || 'svg'; } catch(_) { return 'svg'; } })();
 
+  // ダークモードの初期状態を先に適用（ページレンダリング前）
+  // これにより、初回起動時でもダークモードがONの場合、正しく色反転される
+  const shouldApplyDarkModeInitially = window.__viewer_darkModeEnabled;
+
 
   for (let p = 1; p <= pdf.numPages; p++) {
     try {
@@ -264,8 +268,8 @@ window.startViewer = async function startViewer(){
   // 配線後に初期スケール/モードを適用
   try { window.__viewer_applyScaleToAllPages(1.0); } catch(_) {}
   try { window.__viewer_applyMode(curMode); } catch(_) {}
-  // 初期ダークモード状態適用（OFFなら何もしない/ONなら再適用）
-  try { if (typeof window.__viewer_applyDarkMode === 'function') window.__viewer_applyDarkMode(window.__viewer_darkModeEnabled); } catch(_) {}
+  // 初期ダークモード状態適用は不要（ページレンダリング時に既に適用済み）
+  // ページレンダリングループ内でshouldApplyDarkModeInitiallyに基づいて処理されている
 
   window.viewerCleanup = () => { 
     if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
