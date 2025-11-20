@@ -41,7 +41,7 @@ window.startViewer = async function startViewer(){
         let current = 1.0;
         try { const txt = (ui.zoomVal.value || '100%').toString().replace('%',''); const v = parseFloat(txt); if (isFinite(v) && v>0) current = v/100; } catch(_) {}
 
-        const K = 0.003; // 感度係数（小さく→低感度/大きく→高感度）
+        const K = 0.006; // 感度係数（小さく→低感度/大きく→高感度）
         const factor = Math.exp(-e.deltaY * K);
         const next = Math.min(5, Math.max(0.1, current * factor));
 
