@@ -22,7 +22,8 @@ window.startViewer = async function startViewer(){
   let resp; try { resp = await fetch(file); if (!resp.ok) throw new Error('Failed to fetch PDF: ' + resp.status); }
   catch(e){ origContainer.textContent = 'Fetch error: ' + e.message; return; }
   const arrayBuffer = await resp.arrayBuffer();
-  window.__viewer_pdfArrayBuffer = arrayBuffer; window.__viewer_pdfUrl = file;
+  // pdfArrayBufferは保持せずメモリ削減（必要時に再フェッチ）
+  window.__viewer_pdfUrl = file;
 
   const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, cMapUrl: cMapUrlForExtension, cMapPacked: true, useWorkerFetch: true });
   const pdf = await loadingTask.promise;
@@ -83,8 +84,90 @@ window.startViewer = async function startViewer(){
   // これにより、初回起動時でもダークモードがONの場合、正しく色反転される
   const shouldApplyDarkModeInitially = window.__viewer_darkModeEnabled;
 
+  // メモリ削減: 初期表示は最初の3ページのみレンダリング
+  const INITIAL_RENDER_PAGES = 3;
+  
+  // ページメタデータを保持（遅延レンダリング用）
+  window.__viewer_pageMetadata = new Map();
 
+  // プレースホルダーページを生成する関数
+  async function createPlaceholderPage(pageNum) {
+    const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 1.5 });
+    
+    const pageDiv = document.createElement('div');
+    pageDiv.className = 'page';
+    pageDiv.setAttribute('data-page-num', pageNum);
+    pageDiv.setAttribute('data-base-width', viewport.width);
+    pageDiv.setAttribute('data-base-height', viewport.height);
+    pageDiv.setAttribute('data-placeholder', 'true');
+    pageDiv.style.width = viewport.width + 'px';
+    pageDiv.style.height = viewport.height + 'px';
+    pageDiv.style.transformOrigin = '0 0';
+    pageDiv.style.overflow = 'visible';
+    pageDiv.style.display = 'block';
+    pageDiv.style.position = 'relative';
+    pageDiv.style.background = '#f0f0f0';
+    
+    const paper = document.createElement('div');
+    paper.className = 'paper';
+    paper.style.width = viewport.width + 'px';
+    paper.style.height = viewport.height + 'px';
+    paper.style.transformOrigin = '0 0';
+    paper.style.background = '#fff';
+    paper.style.display = 'flex';
+    paper.style.alignItems = 'center';
+    paper.style.justifyContent = 'center';
+    paper.style.color = '#999';
+    paper.textContent = `Page ${pageNum}`;
+    
+    const footer = document.createElement('div');
+    footer.className = 'page-footer';
+    footer.textContent = `Page ${pageNum} / ${pdf.numPages}`;
+    
+    const pageWrapper = document.createElement('div');
+    pageWrapper.className = 'page-wrapper';
+    pageWrapper.style.display = 'flex';
+    pageWrapper.style.flexDirection = 'column';
+    pageWrapper.style.alignItems = 'center';
+    pageWrapper.style.gap = '8px';
+    
+    pageDiv.appendChild(paper);
+    pageWrapper.appendChild(pageDiv);
+    pageWrapper.appendChild(footer);
+    
+    // メタデータ保存
+    window.__viewer_pageMetadata.set(pageNum, { viewport, width: viewport.width, height: viewport.height });
+    
+    // ページオブジェクトを即座にクリーンアップ
+    try { page.cleanup(); } catch(_) {}
+    
+    return pageWrapper;
+  }
+
+  // 全ページのプレースホルダーを先に生成
   for (let p = 1; p <= pdf.numPages; p++) {
+    const pageWrapper = await createPlaceholderPage(p);
+    container.appendChild(pageWrapper);
+  }
+
+  // 最初の数ページのみ実際にレンダリング
+  for (let p = 1; p <= Math.min(INITIAL_RENDER_PAGES, pdf.numPages); p++) {
+    await renderPageContent(p, pdf, container, allowCopy, curMode);
+  }
+
+  // ページレンダリング関数
+  async function renderPageContent(p, pdf, container, allowCopy, curMode) {
+    // 既存のプレースホルダーを検索
+    const existingPages = container.querySelectorAll('.page');
+    let placeholderWrapper = null;
+    existingPages.forEach(pageDiv => {
+      const pageNum = parseInt(pageDiv.getAttribute('data-page-num'));
+      if (pageNum === p) {
+        placeholderWrapper = pageDiv.closest('.page-wrapper');
+      }
+    });
+    
     let hadShadingError = false;
     let shadingErrorDetails = null;
     
@@ -186,6 +269,7 @@ window.startViewer = async function startViewer(){
       // ページ要素をこの時点で用意
       const pageDiv = document.createElement('div');
       pageDiv.className = 'page';
+      pageDiv.setAttribute('data-page-num', p);
       pageDiv.setAttribute('data-base-width', viewport.width);
       pageDiv.setAttribute('data-base-height', viewport.height);
       // Shadingエラーフラグを保存
@@ -223,7 +307,13 @@ window.startViewer = async function startViewer(){
         pageDiv.appendChild(paper);
         pageWrapper.appendChild(pageDiv);
         pageWrapper.appendChild(footer);
-        container.appendChild(pageWrapper);
+        
+        // プレースホルダーがあれば置き換え、なければ追加
+        if (placeholderWrapper) {
+          placeholderWrapper.replaceWith(pageWrapper);
+        } else {
+          container.appendChild(pageWrapper);
+        }
 
         // ここから描画後の調整（ダークモードON時のみスマート反転）
         if (window.__viewer_darkModeEnabled) {
@@ -266,7 +356,13 @@ window.startViewer = async function startViewer(){
         pageDiv.appendChild(paper);
         pageWrapper.appendChild(pageDiv);
         pageWrapper.appendChild(footer);
-        container.appendChild(pageWrapper);
+        
+        // プレースホルダーがあれば置き換え、なければ追加
+        if (placeholderWrapper) {
+          placeholderWrapper.replaceWith(pageWrapper);
+        } else {
+          container.appendChild(pageWrapper);
+        }
       }
       if (hasText && !hadShadingError) {
         const wantForceVisible = (curMode === 'overlay');
@@ -276,26 +372,67 @@ window.startViewer = async function startViewer(){
       }
 
       // 以降の二重処理を削除(上で分岐済み)
+      
+      // レンダリング完了後、ページオブジェクトをクリーンアップ
+      try { page.cleanup(); } catch(_) {}
 
     } catch(err){ 
       console.error(`Error rendering page ${p}`, err);
     }
   }
+  
+  // レンダリング済みページを追跡
+  window.__viewer_renderedPages = new Set();
+  for (let i = 1; i <= Math.min(INITIAL_RENDER_PAGES, pdf.numPages); i++) {
+    window.__viewer_renderedPages.add(i);
+  }
 
-  // 可視範囲ページのレンダリング最適化
+  // 遅延レンダリングシステム（メモリ削減）
   let renderDebounceTimer = null;
+  const renderQueue = new Set();
+  let isRendering = false;
+  
+  async function processRenderQueue() {
+    if (isRendering || renderQueue.size === 0) return;
+    isRendering = true;
+    
+    const pageNum = Array.from(renderQueue)[0];
+    renderQueue.delete(pageNum);
+    
+    try {
+      await renderPageContent(pageNum, pdf, container, allowCopy, curMode);
+      window.__viewer_renderedPages.add(pageNum);
+      console.log(`Lazy rendered page ${pageNum}`);
+    } catch(e) {
+      console.error(`Failed to render page ${pageNum}:`, e);
+    }
+    
+    isRendering = false;
+    // 次のページをレンダリング
+    if (renderQueue.size > 0) {
+      requestAnimationFrame(() => processRenderQueue());
+    }
+  }
+  
   function updateVisiblePages() {
     if (renderDebounceTimer) {
       clearTimeout(renderDebounceTimer);
     }
-    renderDebounceTimer = setTimeout(() => {
+    renderDebounceTimer = setTimeout(async () => {
       const wrapper = ui.wrapper;
       const viewportTop = wrapper.scrollTop;
       const viewportBottom = viewportTop + wrapper.clientHeight;
-      const RENDER_MARGIN = 1000; // プリレンダリングマージン（ピクセル）
+      const RENDER_MARGIN = 5000; // プリレンダリングマージン（ピクセル）
+      const UNLOAD_MARGIN = 10000; // アンロードマージン（ピクセル）
       
       const pages = ui.pagesHolder.querySelectorAll('.page');
-      pages.forEach((pageDiv, index) => {
+      const visiblePages = [];
+      const farPages = [];
+      
+      pages.forEach((pageDiv) => {
+        const pageNum = parseInt(pageDiv.getAttribute('data-page-num'));
+        if (!pageNum) return;
+        
         const rect = pageDiv.getBoundingClientRect();
         const wrapperRect = wrapper.getBoundingClientRect();
         const pageTop = rect.top - wrapperRect.top + viewportTop;
@@ -303,16 +440,39 @@ window.startViewer = async function startViewer(){
         
         const isVisible = pageBottom >= viewportTop - RENDER_MARGIN &&
                          pageTop <= viewportBottom + RENDER_MARGIN;
+        const isFar = pageBottom < viewportTop - UNLOAD_MARGIN ||
+                     pageTop > viewportBottom + UNLOAD_MARGIN;
         
-        // 可視範囲外のページは低優先度に
-        if (!isVisible) {
-          const paper = pageDiv.querySelector('.paper');
-          if (paper) {
-            // 必要に応じてレンダリング品質を下げる処理をここに追加可能
-          }
+        if (isVisible && !window.__viewer_renderedPages.has(pageNum)) {
+          visiblePages.push(pageNum);
+        } else if (isFar && window.__viewer_renderedPages.has(pageNum)) {
+          farPages.push({ pageNum, pageDiv });
         }
       });
-    }, 100); // 100msのデバウンス
+      
+      // 可視範囲のページをレンダリングキューに追加
+      visiblePages.forEach(pageNum => {
+        renderQueue.add(pageNum);
+      });
+      
+      // 遠くのページをアンロード（メモリ削減）
+      for (const { pageNum, pageDiv } of farPages) {
+        const isPlaceholder = pageDiv.getAttribute('data-placeholder') === 'true';
+        if (!isPlaceholder) {
+          // 実際のコンテンツをプレースホルダーに置き換え
+          const pageWrapper = pageDiv.closest('.page-wrapper');
+          if (pageWrapper) {
+            const newPlaceholder = await createPlaceholderPage(pageNum);
+            pageWrapper.replaceWith(newPlaceholder);
+            window.__viewer_renderedPages.delete(pageNum);
+            console.log(`Unloaded page ${pageNum} to save memory`);
+          }
+        }
+      }
+      
+      // レンダリングキュー処理開始
+      processRenderQueue();
+    }, 150); // 150msのデバウンス
   }
   
   // スクロールイベントリスナーを追加
