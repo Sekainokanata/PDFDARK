@@ -17027,7 +17027,7 @@ exports.SVGGraphics = SVGGraphics;
             break;
 
           default:
-            (0, _util.warn)(`Unimplemented operator ${fn}`);
+            // (0, _util.warn)(`Unimplemented operator ${fn}`);
             break;
         }
       }

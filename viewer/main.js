@@ -22,7 +22,8 @@ window.startViewer = async function startViewer(){
   let resp; try { resp = await fetch(file); if (!resp.ok) throw new Error('Failed to fetch PDF: ' + resp.status); }
   catch(e){ origContainer.textContent = 'Fetch error: ' + e.message; return; }
   const arrayBuffer = await resp.arrayBuffer();
-  window.__viewer_pdfArrayBuffer = arrayBuffer; window.__viewer_pdfUrl = file;
+  // pdfArrayBufferは保持せずメモリ削減（必要時に再フェッチ）
+  window.__viewer_pdfUrl = file;
 
   const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, cMapUrl: cMapUrlForExtension, cMapPacked: true, useWorkerFetch: true });
   const pdf = await loadingTask.promise;
@@ -79,14 +80,144 @@ window.startViewer = async function startViewer(){
 
   const curMode = (function(){ try { return localStorage.getItem('viewerTextMode') || 'svg'; } catch(_) { return 'svg'; } })();
 
+  // ダークモードの初期状態を先に適用（ページレンダリング前）
+  // これにより、初回起動時でもダークモードがONの場合、正しく色反転される
+  const shouldApplyDarkModeInitially = window.__viewer_darkModeEnabled;
 
+  // メモリ削減: 初期表示は最初の3ページのみレンダリング
+  const INITIAL_RENDER_PAGES = 3;
+  
+  // ページメタデータを保持（遅延レンダリング用）
+  window.__viewer_pageMetadata = new Map();
+
+  // プレースホルダーページを生成する関数
+  async function createPlaceholderPage(pageNum) {
+    const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 1.5 });
+    
+    const pageDiv = document.createElement('div');
+    pageDiv.className = 'page';
+    pageDiv.setAttribute('data-page-num', pageNum);
+    pageDiv.setAttribute('data-base-width', viewport.width);
+    pageDiv.setAttribute('data-base-height', viewport.height);
+    pageDiv.setAttribute('data-placeholder', 'true');
+    pageDiv.style.width = viewport.width + 'px';
+    pageDiv.style.height = viewport.height + 'px';
+    pageDiv.style.transformOrigin = '0 0';
+    pageDiv.style.overflow = 'visible';
+    pageDiv.style.display = 'block';
+    pageDiv.style.position = 'relative';
+    pageDiv.style.background = '#f0f0f0';
+    
+    const paper = document.createElement('div');
+    paper.className = 'paper';
+    paper.style.width = viewport.width + 'px';
+    paper.style.height = viewport.height + 'px';
+    paper.style.transformOrigin = '0 0';
+    paper.style.background = '#fff';
+    paper.style.display = 'flex';
+    paper.style.alignItems = 'center';
+    paper.style.justifyContent = 'center';
+    paper.style.color = '#999';
+    paper.textContent = `Page ${pageNum}`;
+    
+    const footer = document.createElement('div');
+    footer.className = 'page-footer';
+    footer.textContent = `Page ${pageNum} / ${pdf.numPages}`;
+    
+    const pageWrapper = document.createElement('div');
+    pageWrapper.className = 'page-wrapper';
+    pageWrapper.style.display = 'flex';
+    pageWrapper.style.flexDirection = 'column';
+    pageWrapper.style.alignItems = 'center';
+    pageWrapper.style.gap = '8px';
+    
+    pageDiv.appendChild(paper);
+    pageWrapper.appendChild(pageDiv);
+    pageWrapper.appendChild(footer);
+    
+    // メタデータ保存
+    window.__viewer_pageMetadata.set(pageNum, { viewport, width: viewport.width, height: viewport.height });
+    
+    // ページオブジェクトを即座にクリーンアップ
+    try { page.cleanup(); } catch(_) {}
+    
+    return pageWrapper;
+  }
+
+  // 全ページのプレースホルダーを先に生成
   for (let p = 1; p <= pdf.numPages; p++) {
+    const pageWrapper = await createPlaceholderPage(p);
+    container.appendChild(pageWrapper);
+  }
+
+  // 最初の数ページのみ実際にレンダリング
+  for (let p = 1; p <= Math.min(INITIAL_RENDER_PAGES, pdf.numPages); p++) {
+    await renderPageContent(p, pdf, container, allowCopy, curMode);
+  }
+
+  // ページレンダリング関数
+  async function renderPageContent(p, pdf, container, allowCopy, curMode) {
+    // 既存のプレースホルダーを検索
+    const existingPages = container.querySelectorAll('.page');
+    let placeholderWrapper = null;
+    existingPages.forEach(pageDiv => {
+      const pageNum = parseInt(pageDiv.getAttribute('data-page-num'));
+      if (pageNum === p) {
+        placeholderWrapper = pageDiv.closest('.page-wrapper');
+      }
+    });
+    
+    let hadShadingError = false;
+    let shadingErrorDetails = null;
+    
     try {
       const page = await pdf.getPage(p);
       const viewport = page.getViewport({ scale: 1.5 });
       const opList = await page.getOperatorList();
       const svgGfx = new pdfjsLib.SVGGraphics(page.commonObjs, page.objs);
-      const svg = await svgGfx.getSVG(opList, viewport);
+      let svg = null;
+      
+      try {
+        svg = await svgGfx.getSVG(opList, viewport);
+      } catch(svgError) {
+        // SVGレンダリング中のShadingエラーを検出
+        if (svgError && svgError.message && svgError.message.includes('Unknown IR type: Shading')) {
+          hadShadingError = true;
+          shadingErrorDetails = {
+            error: svgError,
+            operatorList: opList
+          };
+          
+          // エラー詳細をログ出力
+          console.warn(`Page ${p}: Shading rendering failed - attempting fallback`);
+          console.warn(`Error details:`, svgError.message);
+          
+          // オペレーターリストを解析して問題の文字を特定
+          try {
+            const ops = opList.fnArray || [];
+            const args = opList.argsArray || [];
+            console.group(`Page ${p}: Operator analysis`);
+            
+            ops.forEach((op, idx) => {
+              const opName = pdfjsLib.OPS ? Object.keys(pdfjsLib.OPS).find(k => pdfjsLib.OPS[k] === op) : op;
+              if (opName && (opName.includes('Text') || opName.includes('Font') || opName.includes('Shading'))) {
+                console.log(`Op[${idx}]: ${opName}`, args[idx]);
+              }
+            });
+            console.groupEnd();
+          } catch(e) {
+            console.warn('Could not analyze operator list:', e);
+          }
+          
+          // フォールバック: 空のSVGを作成
+          svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+          svg.setAttribute('version', '1.1');
+        } else {
+          throw svgError; // 他のエラーは再スロー
+        }
+      }
 
       // まずテキスト有無を判定
       let textContent = null; try { textContent = await page.getTextContent(); } catch(e){ console.warn('getTextContent failed for page', p, e); }
@@ -138,8 +269,13 @@ window.startViewer = async function startViewer(){
       // ページ要素をこの時点で用意
       const pageDiv = document.createElement('div');
       pageDiv.className = 'page';
+      pageDiv.setAttribute('data-page-num', p);
       pageDiv.setAttribute('data-base-width', viewport.width);
       pageDiv.setAttribute('data-base-height', viewport.height);
+      // Shadingエラーフラグを保存
+      if (hadShadingError) {
+        pageDiv.setAttribute('data-shading-error', 'true');
+      }
       pageDiv.style.width = viewport.width + 'px';
       pageDiv.style.height = viewport.height + 'px';
       pageDiv.style.transformOrigin = '0 0'; pageDiv.style.overflow = 'visible'; pageDiv.style.display = 'block'; pageDiv.style.position = 'relative';
@@ -171,7 +307,13 @@ window.startViewer = async function startViewer(){
         pageDiv.appendChild(paper);
         pageWrapper.appendChild(pageDiv);
         pageWrapper.appendChild(footer);
-        container.appendChild(pageWrapper);
+        
+        // プレースホルダーがあれば置き換え、なければ追加
+        if (placeholderWrapper) {
+          placeholderWrapper.replaceWith(pageWrapper);
+        } else {
+          container.appendChild(pageWrapper);
+        }
 
         // ここから描画後の調整（ダークモードON時のみスマート反転）
         if (window.__viewer_darkModeEnabled) {
@@ -179,12 +321,28 @@ window.startViewer = async function startViewer(){
         }
         // テキストレイヤ: textContent があれば常に生成（allowCopy=false でもオーバーレイモードのため必要）
         if (textContent && textContent.items && textContent.items.length > 0) {
-          const wantForceVisible = (curMode === 'overlay');
+          const wantForceVisible = hadShadingError || (curMode === 'overlay');
           const overlayColor = window.__viewer_darkModeEnabled ? '#E0E0E0' : '#222222';
-          window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: overlayColor, allowCopy: allowCopy });
+          
+          // Shadingエラー時は詳細ログを出力
+          if (hadShadingError) {
+            console.group(`Page ${p}: Shading fallback - rendering text layer`);
+            console.log('Text items:', textContent.items.length);
+            textContent.items.slice(0, 10).forEach((item, idx) => {
+              console.log(`  [${idx}] "${item.str}" at (${item.transform[4].toFixed(1)}, ${item.transform[5].toFixed(1)})`);
+            });
+            if (textContent.items.length > 10) {
+              console.log(`  ... and ${textContent.items.length - 10} more items`);
+            }
+            console.groupEnd();
+          }
+          
+          // Shadingエラー時はSVGテキストとの重複チェックを無効化(常に表示)
+          const makeTransparent = hadShadingError ? false : true;
+          window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: makeTransparent, color: overlayColor, allowCopy: allowCopy });
           if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
         }
-        if (window.__viewer_darkModeEnabled) {
+        if (window.__viewer_darkModeEnabled && !hadShadingError) {
           await window.processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
           try { console.log('ノーマル反転対象です'); } catch(_) {}
         }
@@ -198,41 +356,83 @@ window.startViewer = async function startViewer(){
         pageDiv.appendChild(paper);
         pageWrapper.appendChild(pageDiv);
         pageWrapper.appendChild(footer);
-        container.appendChild(pageWrapper);
+        
+        // プレースホルダーがあれば置き換え、なければ追加
+        if (placeholderWrapper) {
+          placeholderWrapper.replaceWith(pageWrapper);
+        } else {
+          container.appendChild(pageWrapper);
+        }
       }
-      if (hasText) {
+      if (hasText && !hadShadingError) {
         const wantForceVisible = (curMode === 'overlay');
         const overlayColor2 = window.__viewer_darkModeEnabled ? '#E0E0E0' : '#222222';
         window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: overlayColor2, allowCopy: allowCopy });
         if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
       }
 
-      // 以降の二重処理を削除（上で分岐済み）
+      // 以降の二重処理を削除(上で分岐済み)
+      
+      // レンダリング完了後、ページオブジェクトをクリーンアップ
+      try { page.cleanup(); } catch(_) {}
 
     } catch(err){ 
-      // Shading エラーは警告レベルなのでログを抑制
-      if (err && err.message && err.message.includes('Unknown IR type: Shading')) {
-        console.warn(`Page ${p}: Shading not supported (non-critical)`);
-      } else {
-        console.error(`Error rendering page ${p}`, err);
-      }
+      console.error(`Error rendering page ${p}`, err);
     }
   }
+  
+  // レンダリング済みページを追跡
+  window.__viewer_renderedPages = new Set();
+  for (let i = 1; i <= Math.min(INITIAL_RENDER_PAGES, pdf.numPages); i++) {
+    window.__viewer_renderedPages.add(i);
+  }
 
-  // 可視範囲ページのレンダリング最適化
+  // 遅延レンダリングシステム（メモリ削減）
   let renderDebounceTimer = null;
+  const renderQueue = new Set();
+  let isRendering = false;
+  
+  async function processRenderQueue() {
+    if (isRendering || renderQueue.size === 0) return;
+    isRendering = true;
+    
+    const pageNum = Array.from(renderQueue)[0];
+    renderQueue.delete(pageNum);
+    
+    try {
+      await renderPageContent(pageNum, pdf, container, allowCopy, curMode);
+      window.__viewer_renderedPages.add(pageNum);
+      console.log(`Lazy rendered page ${pageNum}`);
+    } catch(e) {
+      console.error(`Failed to render page ${pageNum}:`, e);
+    }
+    
+    isRendering = false;
+    // 次のページをレンダリング
+    if (renderQueue.size > 0) {
+      requestAnimationFrame(() => processRenderQueue());
+    }
+  }
+  
   function updateVisiblePages() {
     if (renderDebounceTimer) {
       clearTimeout(renderDebounceTimer);
     }
-    renderDebounceTimer = setTimeout(() => {
+    renderDebounceTimer = setTimeout(async () => {
       const wrapper = ui.wrapper;
       const viewportTop = wrapper.scrollTop;
       const viewportBottom = viewportTop + wrapper.clientHeight;
-      const RENDER_MARGIN = 1000; // プリレンダリングマージン（ピクセル）
+      const RENDER_MARGIN = 5000; // プリレンダリングマージン（ピクセル）
+      const UNLOAD_MARGIN = 10000; // アンロードマージン（ピクセル）
       
       const pages = ui.pagesHolder.querySelectorAll('.page');
-      pages.forEach((pageDiv, index) => {
+      const visiblePages = [];
+      const farPages = [];
+      
+      pages.forEach((pageDiv) => {
+        const pageNum = parseInt(pageDiv.getAttribute('data-page-num'));
+        if (!pageNum) return;
+        
         const rect = pageDiv.getBoundingClientRect();
         const wrapperRect = wrapper.getBoundingClientRect();
         const pageTop = rect.top - wrapperRect.top + viewportTop;
@@ -240,16 +440,39 @@ window.startViewer = async function startViewer(){
         
         const isVisible = pageBottom >= viewportTop - RENDER_MARGIN &&
                          pageTop <= viewportBottom + RENDER_MARGIN;
+        const isFar = pageBottom < viewportTop - UNLOAD_MARGIN ||
+                     pageTop > viewportBottom + UNLOAD_MARGIN;
         
-        // 可視範囲外のページは低優先度に
-        if (!isVisible) {
-          const paper = pageDiv.querySelector('.paper');
-          if (paper) {
-            // 必要に応じてレンダリング品質を下げる処理をここに追加可能
-          }
+        if (isVisible && !window.__viewer_renderedPages.has(pageNum)) {
+          visiblePages.push(pageNum);
+        } else if (isFar && window.__viewer_renderedPages.has(pageNum)) {
+          farPages.push({ pageNum, pageDiv });
         }
       });
-    }, 100); // 100msのデバウンス
+      
+      // 可視範囲のページをレンダリングキューに追加
+      visiblePages.forEach(pageNum => {
+        renderQueue.add(pageNum);
+      });
+      
+      // 遠くのページをアンロード（メモリ削減）
+      for (const { pageNum, pageDiv } of farPages) {
+        const isPlaceholder = pageDiv.getAttribute('data-placeholder') === 'true';
+        if (!isPlaceholder) {
+          // 実際のコンテンツをプレースホルダーに置き換え
+          const pageWrapper = pageDiv.closest('.page-wrapper');
+          if (pageWrapper) {
+            const newPlaceholder = await createPlaceholderPage(pageNum);
+            pageWrapper.replaceWith(newPlaceholder);
+            window.__viewer_renderedPages.delete(pageNum);
+            console.log(`Unloaded page ${pageNum} to save memory`);
+          }
+        }
+      }
+      
+      // レンダリングキュー処理開始
+      processRenderQueue();
+    }, 150); // 150msのデバウンス
   }
   
   // スクロールイベントリスナーを追加
@@ -264,8 +487,8 @@ window.startViewer = async function startViewer(){
   // 配線後に初期スケール/モードを適用
   try { window.__viewer_applyScaleToAllPages(1.0); } catch(_) {}
   try { window.__viewer_applyMode(curMode); } catch(_) {}
-  // 初期ダークモード状態適用（OFFなら何もしない/ONなら再適用）
-  try { if (typeof window.__viewer_applyDarkMode === 'function') window.__viewer_applyDarkMode(window.__viewer_darkModeEnabled); } catch(_) {}
+  // 初期ダークモード状態適用は不要（ページレンダリング時に既に適用済み）
+  // ページレンダリングループ内でshouldApplyDarkModeInitiallyに基づいて処理されている
 
   window.viewerCleanup = () => { 
     if (renderDebounceTimer) clearTimeout(renderDebounceTimer);

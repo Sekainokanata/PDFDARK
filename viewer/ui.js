@@ -159,9 +159,20 @@ window.setupShell = function setupShell(origContainer) {
 window.__viewer_highlightEnabled = false;
 
 // ========= ダークモード トグル =========
-// グローバル状態（既定: OFF）
+// グローバル状態（既定: ON、localStorageから復元）
 if (typeof window.__viewer_darkModeEnabled === 'undefined') {
-  window.__viewer_darkModeEnabled = false;
+  // localStorageから読み込み（初回起動時はON）
+  try {
+    const saved = localStorage.getItem('viewerDarkMode');
+    if (saved !== null) {
+      window.__viewer_darkModeEnabled = saved === 'true';
+    } else {
+      // 初回起動時はデフォルトON
+      window.__viewer_darkModeEnabled = true;
+    }
+  } catch(_) {
+    window.__viewer_darkModeEnabled = true; // localStorageが使えない場合もON
+  }
 }
 
 // ボタン配線（ON でダークモード適用、OFF で元に戻す）
@@ -175,8 +186,13 @@ window.ensureDarkModeToggle = function ensureDarkModeToggle(ui){
     btn.style.background = window.__viewer_darkModeEnabled ? '#0a84ff' : '';
   };
   btn.addEventListener('click', () => {
-    // 既存の toolbar.js でもこのボタンを使用しているため、ここでは状態だけ反転し適用を呼ぶ
+    // 状態を反転しlocalStorageに保存
     window.__viewer_darkModeEnabled = !window.__viewer_darkModeEnabled;
+    try {
+      localStorage.setItem('viewerDarkMode', window.__viewer_darkModeEnabled);
+    } catch(_) {}
+    
+    // ダークモードを適用
     try { if (typeof window.__viewer_applyDarkMode === 'function') { window.__viewer_applyDarkMode(window.__viewer_darkModeEnabled); } } catch(_) {}
     updateUi();
   });
