@@ -196,8 +196,10 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     const pages = ui.pagesHolder.querySelectorAll('.page');
     pages.forEach(pageDiv => {
       const svgElem = pageDiv.querySelector('svg'); const textLayer = pageDiv.querySelector('.textLayer');
-      if (mode === 'svg') {
-        // SVGモード: SVG内テキストを表示、テキストレイヤは透明
+      const hasShadingError = pageDiv.hasAttribute('data-shading-error');
+      
+      if (mode === 'svg' && !hasShadingError) {
+        // SVGモード: SVG内テキストを表示、テキストレイヤは透明（Shadingエラーページは除外）
         if (svgElem) { svgElem.style.pointerEvents = ''; svgElem.style.userSelect = ''; svgElem.querySelectorAll('text, tspan').forEach(t => { t.style.visibility = ''; t.style.display = ''; t.style.pointerEvents = ''; t.style.userSelect = ''; }); }
         if (textLayer) { 
           textLayer.querySelectorAll('span').forEach(s => { 
@@ -210,8 +212,8 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
           textLayer.style.pointerEvents = 'none'; 
           textLayer.style.userSelect = 'none'; 
         }
-      } else {
-        // オーバーレイモード: SVG内テキストを非表示、テキストレイヤを表示
+      } else if (mode === 'overlay' || hasShadingError) {
+        // オーバーレイモードまたはShadingエラー: SVG内テキストを非表示、テキストレイヤを表示
         if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; t.style.pointerEvents = 'none'; t.style.userSelect = 'none'; }); svgElem.style.pointerEvents = 'none'; svgElem.style.userSelect = 'none'; }
         const overlayColor = (window.__viewer_darkModeEnabled ? '#e0e0e0' : '#222222');
         if (textLayer) { 

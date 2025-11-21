@@ -1278,9 +1278,10 @@ window.__viewer_applyDarkMode = async function __viewer_applyDarkMode(enabled){
       const svg = paper.querySelector('svg');
       const canvases = paper.querySelectorAll('canvas');
       const textLayer = pageDiv.querySelector('.textLayer');
+      const hasShadingError = pageDiv.hasAttribute('data-shading-error');
       
-      // オーバーレイモードの場合、テキストレイヤーの色を更新
-      if (currentMode === 'overlay' && textLayer) {
+      // オーバーレイモードまたはShadingエラーページの場合、テキストレイヤーの色を更新
+      if ((currentMode === 'overlay' || hasShadingError) && textLayer) {
         const overlayColor = enabled ? '#e0e0e0' : '#222222';
         textLayer.querySelectorAll('span').forEach(s => {
           //const currentColor = s.style.getComputedStyle('color');
