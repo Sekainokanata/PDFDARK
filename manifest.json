@@ -9,7 +9,8 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Open PDF with Invert Viewer"
+    "default_title": "PDF Dark Viewer",
+    "default_popup": "popup.html"
   },
   "icons": {
     "48": "images/darkmode.png"

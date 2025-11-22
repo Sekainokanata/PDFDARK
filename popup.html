@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 250px;
+      margin: 0;
+      padding: 16px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #ffffff;
+    }
+    
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #e0e0e0;
+    }
+    
+    .header img {
+      width: 32px;
+      height: 32px;
+    }
+    
+    .header h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: #333;
+    }
+    
+    .toggle-section {
+      margin-bottom: 16px;
+    }
+    
+    .toggle-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px;
+      background: #f5f5f5;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    .toggle-container:hover {
+      background: #ebebeb;
+    }
+    
+    .toggle-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: #333;
+    }
+    
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      background: #ccc;
+      border-radius: 12px;
+      transition: background 0.3s;
+    }
+    
+    .toggle-switch.active {
+      background: #4CAF50;
+    }
+    
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.3s;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    .toggle-switch.active::after {
+      transform: translateX(20px);
+    }
+    
+    .status-text {
+      font-size: 12px;
+      color: #666;
+      margin-top: 8px;
+      text-align: center;
+    }
+    
+    .status-text.enabled {
+      color: #4CAF50;
+    }
+    
+    .status-text.disabled {
+      color: #f44336;
+    }
+    
+    .info {
+      margin-top: 16px;
+      padding: 12px;
+      background: #e3f2fd;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #1976d2;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="images/darkmode.png" alt="Icon">
+    <h1>PDF Dark Viewer</h1>
+  </div>
+  
+  <div class="toggle-section">
+    <div class="toggle-container" id="toggleBtn">
+      <span class="toggle-label">自動PDF変換</span>
+      <div class="toggle-switch" id="toggleSwitch"></div>
+    </div>
+    <div class="status-text" id="statusText">読み込み中...</div>
+  </div>
+  
+  <div class="info">
+    <strong>ON:</strong> PDFを自動的にダークモードビューアーで開きます<br>
+    <strong>OFF:</strong> 通常のPDFビューアーで開きます
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
