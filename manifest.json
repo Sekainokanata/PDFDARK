@@ -30,7 +30,9 @@
         "pdfjs/pdf.worker.js",
         "pdfjs/cmaps/*",
         "vendor/opencv/opencv.js",
-        "vendor/opencv/opencv_js.wasm"
+        "vendor/opencv/opencv_js.wasm",
+        "images/*.png",
+        "icon48.png"
       ],
       "matches": ["<all_urls>"]
     }
