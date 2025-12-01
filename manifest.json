@@ -3,7 +3,7 @@
   "name": "Invert PDF Viewer",
   "version": "1.0",
   "description": "PDFの背景を黒、黒文字を白にして表示（画像保持）",
-  "permissions": ["contextMenus", "activeTab", "storage"],
+  "permissions": ["activeTab", "storage"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
@@ -30,7 +30,9 @@
         "pdfjs/pdf.worker.js",
         "pdfjs/cmaps/*",
         "vendor/opencv/opencv.js",
-        "vendor/opencv/opencv_js.wasm"
+        "vendor/opencv/opencv_js.wasm",
+        "images/*.png",
+        "icon48.png"
       ],
       "matches": ["<all_urls>"]
     }

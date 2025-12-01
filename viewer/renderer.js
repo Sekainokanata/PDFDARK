@@ -215,7 +215,16 @@ window.processSvgImagesHighQuality = async function processSvgImagesHighQuality(
   // 稀に内部で `svg` を参照するコード断片が混入しても落ちないように別名を用意
   const svg = svgRoot;
   const objectUrlMap = window.objectUrlMap;
-  const sampleMax = options.sampleMax ?? 200; const photoThresh = { avgSat: options.photoAvgSat ?? 0.05, colorStd: options.photoColorStd ?? 5, entropy: options.photoEntropy ?? 4.0, edgeDensity: options.photoEdgeDensity ?? 0.06 };
+  const sampleMax = options.sampleMax ?? 200;
+  // 閾値を緩めて写真/イラストを検出しやすくする
+  const photoThresh = {
+    avgSat: options.photoAvgSat ?? 0.03,         // 0.05 → 0.03 に緩和
+    colorStd: options.photoColorStd ?? 3,        // 5 → 3 に緩和
+    entropy: options.photoEntropy ?? 3.5,        // 4.0 → 3.5 に緩和
+    edgeDensity: options.photoEdgeDensity ?? 0.04 // 0.06 → 0.04 に緩和
+  };
+  // 透過ピクセル（alpha < 255）がこの割合以上ならイラストと判定して反転しない
+  const alphaThresholdRatio = options.alphaThresholdRatio ?? 0.01; // 1%以上透過があればイラスト
   const images = Array.from(svgRoot.querySelectorAll('image'));
   for (const imgEl of images) {
     try {
@@ -230,14 +239,42 @@ window.processSvgImagesHighQuality = async function processSvgImagesHighQuality(
       const sampScale = Math.min(1, sampleMax / Math.max(tmpBitmap.width || 1, tmpBitmap.height || 1)); const sampW = Math.max(1, Math.floor((tmpBitmap.width || 1) * sampScale)); const sampH = Math.max(1, Math.floor((tmpBitmap.height || 1) * sampScale));
       const sampCanvas = document.createElement('canvas'); sampCanvas.width = sampW; sampCanvas.height = sampH; const sctx = sampCanvas.getContext('2d'); sctx.imageSmoothingEnabled = true; sctx.imageSmoothingQuality = 'high'; sctx.drawImage(tmpBitmap, 0, 0, sampW, sampH); tmpBitmap.close?.();
       let imgData; try { imgData = sctx.getImageData(0, 0, sampW, sampH); } catch(e){ console.warn('getImageData sampling failed', e); imgEl.style.filter = 'invert(1)'; continue; }
-      const data = imgData.data; const pixelCount = sampW * sampH; let sumSat = 0, sumR=0,sumG=0,sumB=0; for (let i=0;i<data.length;i+=4){ const r=data[i],g=data[i+1],b=data[i+2]; sumR+=r; sumG+=g; sumB+=b; const rn=r/255, gn=g/255, bn=b/255; const mx=Math.max(rn,gn,bn), mn=Math.min(rn,gn,bn); const l=(mx+mn)/2; const s=(mx===mn)?0:(l>0.5 ? (mx-mn)/(2-mx-mn) : (mx-mn)/(mx+mn)); sumSat+=s; }
+      const data = imgData.data; const pixelCount = sampW * sampH;
+      
+      // 透過ピクセル検出: alpha < 255 のピクセル数をカウント
+      let transparentCount = 0;
+      let sumSat = 0, sumR=0,sumG=0,sumB=0;
+      for (let i=0;i<data.length;i+=4){
+        const r=data[i],g=data[i+1],b=data[i+2],a=data[i+3];
+        if (a < 255) transparentCount++;
+        sumR+=r; sumG+=g; sumB+=b;
+        const rn=r/255, gn=g/255, bn=b/255; const mx=Math.max(rn,gn,bn), mn=Math.min(rn,gn,bn); const l=(mx+mn)/2; const s=(mx===mn)?0:(l>0.5 ? (mx-mn)/(2-mx-mn) : (mx-mn)/(mx+mn)); sumSat+=s;
+      }
+      
+      // 透過部分が一定割合以上あればイラストとみなし反転しない
+      const transparentRatio = transparentCount / pixelCount;
+      if (transparentRatio >= alphaThresholdRatio) {
+        console.log('[processSvgImages] skip invert (has transparency):', (transparentRatio*100).toFixed(1) + '%', 'href:', href.slice(0,60));
+        const prev = objectUrlMap.get(imgEl); if (prev && prev.url && prev.revokeOnNext && prev.url.startsWith('blob:')) URL.revokeObjectURL(prev.url); objectUrlMap.delete(imgEl);
+        continue;
+      }
+      
       const avgSat = sumSat / pixelCount; const meanR=sumR/pixelCount, meanG=sumG/pixelCount, meanB=sumB/pixelCount; let varSum=0; for(let i=0;i<data.length;i+=4){ const r=data[i],g=data[i+1],b=data[i+2]; const dr=r-meanR,dg=g-meanG,db=b-meanB; const mag=Math.sqrt(dr*dr+dg*dg+db*db); varSum+=mag*mag; } const colorStd=Math.sqrt(varSum/pixelCount);
       const histBins=64; const hist=new Uint32Array(histBins); const lum=new Float32Array(pixelCount); for(let y=0,idx=0;y<sampH;y++){ for(let x=0;x<sampW;x++,idx++){ const i=(y*sampW+x)*4; const r=data[i],g=data[i+1],b=data[i+2]; lum[idx]=(0.2126*r+0.7152*g+0.0722*b)/255; const v=Math.min(histBins-1, Math.floor(lum[idx]*histBins)); hist[v]++; } }
       let entropy=0; for(let b=0;b<histBins;b++){ if (hist[b]===0) continue; const p=hist[b]/pixelCount; entropy -= p * Math.log2(p); }
       let edgeCount=0; for (let y=1; y<sampH-1; y++){ for(let x=1; x<sampW-1; x++){ const idx=y*sampW+x; const gx=( -lum[idx - sampW - 1] + lum[idx - sampW + 1] + -2*lum[idx - 1] + 2*lum[idx + 1] + -1*lum[idx + sampW - 1] + 1*lum[idx + sampW + 1] ); const gy=( -lum[idx - sampW - 1] + -2*lum[idx - sampW] + -1*lum[idx - sampW + 1] + 1*lum[idx + sampW - 1] + 2*lum[idx + sampW] + 1*lum[idx + sampW + 1] ); const g=Math.hypot(gx,gy); if(g>0.2) edgeCount++; } }
       const totalEdgeTest=(sampW-2)*(sampH-2)||1; const edgeDensity=edgeCount/totalEdgeTest;
-      const isPhoto = (avgSat >= photoThresh.avgSat && colorStd >= photoThresh.colorStd && entropy >= photoThresh.entropy && edgeDensity >= photoThresh.edgeDensity) || (avgSat >= (photoThresh.avgSat*1.2) && entropy >= (photoThresh.entropy*0.9));
-      if (isPhoto) { const prev = objectUrlMap.get(imgEl); if (prev && prev.url && prev.revokeOnNext && prev.url.startsWith('blob:')) URL.revokeObjectURL(prev.url); objectUrlMap.delete(imgEl); continue; }
+      // 写真判定: 閾値を緩和し、4つの指標のうち3つ以上を満たせば写真とみなす
+      let photoScore = 0;
+      if (avgSat >= photoThresh.avgSat) photoScore++;
+      if (colorStd >= photoThresh.colorStd) photoScore++;
+      if (entropy >= photoThresh.entropy) photoScore++;
+      if (edgeDensity >= photoThresh.edgeDensity) photoScore++;
+      const isPhoto = (photoScore >= 3);
+      if (isPhoto) {
+        console.log('[processSvgImages] skip invert (photo detected):', 'score:', photoScore, 'sat:', avgSat.toFixed(3), 'std:', colorStd.toFixed(1), 'entropy:', entropy.toFixed(2), 'edge:', edgeDensity.toFixed(3));
+        const prev = objectUrlMap.get(imgEl); if (prev && prev.url && prev.revokeOnNext && prev.url.startsWith('blob:')) URL.revokeObjectURL(prev.url); objectUrlMap.delete(imgEl); continue;
+      }
       let fullBitmap; try { const proto = await createImageBitmap(blob); const fullW = proto.width||1, fullH=proto.height||1; const maxFull = options.maxFullSizeForInvert ?? 2500; if (Math.max(fullW, fullH) > maxFull) { imgEl.style.filter = 'invert(1)'; imgEl.setAttribute('data-dm-image-inverted', '1'); proto.close?.(); continue; } fullBitmap = await createImageBitmap(proto); proto.close?.(); } catch(e){ console.warn('createImageBitmap(full) failed', e); imgEl.style.filter='invert(1)'; imgEl.setAttribute('data-dm-image-inverted', '1'); continue; }
       try {
         const fW = fullBitmap.width, fH = fullBitmap.height; const canvas = document.createElement('canvas'); canvas.width = fW; canvas.height = fH; const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(fullBitmap, 0, 0, fW, fH);
@@ -270,14 +307,14 @@ window.detectPhotoRegionsClassic = function detectPhotoRegionsClassic(imgDataSma
       cellEdgeDensityMax: 0.18,     // 写真セルとして許容するエッジ密度上限（やや緩め）
       // 領域（矩形）でのフィルタ
       minAreaRatio: 0.015,          // ページに対する最小面積比（中サイズの写真も拾う）
-      maxAreaRatio: 0.90,           // ページに対する最大面積比（大きい写真も許容）
+      maxAreaRatio: 0.80,           // ページに対する最大面積比（大きい写真も許容）
       minAspect: 0.3,               // アスペクト比下限
       maxAspect: 3.5,               // アスペクト比上限
-      regionEdgeDensityMax: 0.14,   // 領域のエッジ密度上限（やや緩め）
+      regionEdgeDensityMax: 0.08,   // 領域のエッジ密度上限（やや緩め）
       regionEntropyMin: 4.0,        // 領域の最低エントロピー（緩め）
       regionStdMin: 0.15,           // 領域の最低標準偏差（緩め）
       regionSatMin: 0.20,           // 領域の最低彩度（緩め）
-      regionMinSignals: 2,          // 何指標以上満たせば写真扱いにするか
+      regionMinSignals: 4,          // 何指標以上満たせば写真扱いにするか
       expandCells: 0                 // マージン拡張（0推奨）
     }, options);
 

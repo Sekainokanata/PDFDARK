@@ -15,12 +15,6 @@ async function updateIcon() {
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
-  chrome.contextMenus.create({
-    id: "openWithInvert",
-    title: "Open PDF with Invert Viewer",
-    contexts: ["link", "page"]
-  });
-  
   // 初期状態を設定（デフォルトON）
   const result = await chrome.storage.local.get(['pdfViewerEnabled']);
   if (result.pdfViewerEnabled === undefined) {
@@ -35,17 +29,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'stateChanged') {
     updateIcon();
   }
-});
-
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  let url = info.linkUrl || tab.url;
-  if (!url) return;
-  // PDFっぽいURLだけ（拡張子やcontent-typeチェックは簡易）
-  if (!url.match(/\.pdf(\?|$)/i)) {
-    // それでも開きたい？その場合は無条件で開くようにする
-  }
-  const viewerUrl = chrome.runtime.getURL("viewer.html") + "?file=" + encodeURIComponent(url);
-  chrome.tabs.update({ url: viewerUrl });
 });
 
 //======================ここから追加============================================
