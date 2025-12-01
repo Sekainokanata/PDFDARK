@@ -270,14 +270,14 @@ window.detectPhotoRegionsClassic = function detectPhotoRegionsClassic(imgDataSma
       cellEdgeDensityMax: 0.18,     // 写真セルとして許容するエッジ密度上限（やや緩め）
       // 領域（矩形）でのフィルタ
       minAreaRatio: 0.015,          // ページに対する最小面積比（中サイズの写真も拾う）
-      maxAreaRatio: 0.90,           // ページに対する最大面積比（大きい写真も許容）
+      maxAreaRatio: 0.80,           // ページに対する最大面積比（大きい写真も許容）
       minAspect: 0.3,               // アスペクト比下限
       maxAspect: 3.5,               // アスペクト比上限
-      regionEdgeDensityMax: 0.14,   // 領域のエッジ密度上限（やや緩め）
+      regionEdgeDensityMax: 0.08,   // 領域のエッジ密度上限（やや緩め）
       regionEntropyMin: 4.0,        // 領域の最低エントロピー（緩め）
       regionStdMin: 0.15,           // 領域の最低標準偏差（緩め）
       regionSatMin: 0.20,           // 領域の最低彩度（緩め）
-      regionMinSignals: 2,          // 何指標以上満たせば写真扱いにするか
+      regionMinSignals: 4,          // 何指標以上満たせば写真扱いにするか
       expandCells: 0                 // マージン拡張（0推奨）
     }, options);
 
