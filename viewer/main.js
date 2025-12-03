@@ -340,6 +340,8 @@ window.startViewer = async function startViewer(){
           // Shadingエラー時はSVGテキストとの重複チェックを無効化(常に表示)
           const makeTransparent = hadShadingError ? false : true;
           window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: makeTransparent, color: overlayColor, allowCopy: allowCopy });
+          // ページにallowCopy状態を保存（toolbar.jsで参照）
+          pageDiv.setAttribute('data-allow-copy', allowCopy ? 'true' : 'false');
           if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
         }
         if (window.__viewer_darkModeEnabled && !hadShadingError) {
@@ -368,6 +370,8 @@ window.startViewer = async function startViewer(){
         const wantForceVisible = (curMode === 'overlay');
         const overlayColor2 = window.__viewer_darkModeEnabled ? '#E0E0E0' : '#222222';
         window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: overlayColor2, allowCopy: allowCopy });
+        // ページにallowCopy状態を保存（toolbar.jsで参照）
+        pageDiv.setAttribute('data-allow-copy', allowCopy ? 'true' : 'false');
         if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
       }
 

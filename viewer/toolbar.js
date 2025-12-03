@@ -150,15 +150,20 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   function calcPages(){
     //ページ数が1以下ならスクロールによる変更はないためページ数１を返す
     const { wrapper, pagesHolder, ui } = window._getWrapperAndPagesHolder();
-    if(ui.pageTotal<=1){return 1;}
     const pages = Array.from(pagesHolder.querySelectorAll('.page'));
+    // ページが2つ未満の場合は計算不可、1を返す
+    if(pages.length < 2 || ui.pageTotal <= 1){return 1;}
     const pageDiv1 = pages[0];
+    if (!pageDiv1) return 1;
     let contentElem1 = pageDiv1.querySelector('.paper') || pageDiv1.querySelector('svg') || pageDiv1;
     const contentRect1 = contentElem1.getBoundingClientRect();
     const pageDiv2 = pages[1];
+    if (!pageDiv2) return 1;
     let contentElem2 = pageDiv2.querySelector('.paper') || pageDiv2.querySelector('svg') || pageDiv2;
     const contentRect2 = contentElem2.getBoundingClientRect();
-    const defaultValue = wrapper.scrollTop/(contentRect2.top-contentRect1.top)-0.5;
+    const gap = contentRect2.top - contentRect1.top;
+    if (gap === 0) return 1; // 0除算防止
+    const defaultValue = wrapper.scrollTop / gap - 0.5;
     //console.log(defaultValue);
     return defaultValue;
   }
@@ -198,19 +203,48 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
       const svgElem = pageDiv.querySelector('svg'); const textLayer = pageDiv.querySelector('.textLayer');
       const hasShadingError = pageDiv.hasAttribute('data-shading-error');
       
+      // allowCopy 状態を確認（main.jsで設定された値を参照）
+      const firstSpan = textLayer ? textLayer.querySelector('span') : null;
+      // data-allow-copy属性がなければ、初回のuserSelect状態から推測
+      let allowCopy = false;
+      if (pageDiv.hasAttribute('data-allow-copy')) {
+        allowCopy = pageDiv.getAttribute('data-allow-copy') === 'true';
+      } else if (firstSpan) {
+        // 初回はtextLayerのspan状態から判定し、属性に保存
+        allowCopy = !(firstSpan.style.userSelect === 'none' || getComputedStyle(firstSpan).userSelect === 'none');
+        pageDiv.setAttribute('data-allow-copy', allowCopy ? 'true' : 'false');
+      }
+      
       if (mode === 'svg' && !hasShadingError) {
-        // SVGモード: SVG内テキストを表示、テキストレイヤは透明（Shadingエラーページは除外）
-        if (svgElem) { svgElem.style.pointerEvents = ''; svgElem.style.userSelect = ''; svgElem.querySelectorAll('text, tspan').forEach(t => { t.style.visibility = ''; t.style.display = ''; t.style.pointerEvents = ''; t.style.userSelect = ''; }); }
+        // SVGモード: SVG内テキストを表示（選択不可）、textLayerは透明だが選択可能（正しいUnicodeテキスト）
+        if (svgElem) { 
+          svgElem.style.pointerEvents = 'none'; 
+          svgElem.style.userSelect = 'none'; 
+          svgElem.querySelectorAll('text, tspan').forEach(t => { 
+            t.style.visibility = ''; 
+            t.style.display = ''; 
+            t.style.pointerEvents = 'none'; 
+            t.style.userSelect = 'none'; // SVGテキストは選択不可（グリフコードのため）
+          }); 
+        }
         if (textLayer) { 
           textLayer.querySelectorAll('span').forEach(s => { 
             s.style.setProperty('color', 'transparent', 'important');
             s.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
-            s.style.pointerEvents = 'none'; 
-            s.style.userSelect = 'none'; 
-            s.setAttribute('aria-hidden', 'true'); 
+            // コピー許可の場合は透明でも選択可能にする
+            s.style.pointerEvents = allowCopy ? 'auto' : 'none'; 
+            s.style.userSelect = allowCopy ? 'text' : 'none'; 
+            s.style.WebkitUserSelect = allowCopy ? 'text' : 'none'; 
+            s.style.MozUserSelect = allowCopy ? 'text' : 'none'; 
+            if (allowCopy) {
+              s.removeAttribute('aria-hidden');
+            } else {
+              s.setAttribute('aria-hidden', 'true'); 
+            }
           }); 
-          textLayer.style.pointerEvents = 'none'; 
-          textLayer.style.userSelect = 'none'; 
+          textLayer.style.pointerEvents = allowCopy ? 'auto' : 'none'; 
+          textLayer.style.userSelect = allowCopy ? 'text' : 'none'; 
+          textLayer.style.zIndex = '3000'; 
         }
       } else if (mode === 'overlay' || hasShadingError) {
         // オーバーレイモードまたはShadingエラー: SVG内テキストを非表示、テキストレイヤを表示
