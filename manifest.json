@@ -13,7 +13,7 @@
     "default_popup": "popup.html"
   },
   "icons": {
-    "48": "images/darkmode.png"
+    "2048": "icon2048.png"
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: blob:;",
@@ -32,7 +32,7 @@
         "vendor/opencv/opencv.js",
         "vendor/opencv/opencv_js.wasm",
         "images/*.png",
-        "icon48.png"
+        "icon2048.png"
       ],
       "matches": ["<all_urls>"]
     }
