@@ -203,19 +203,48 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
       const svgElem = pageDiv.querySelector('svg'); const textLayer = pageDiv.querySelector('.textLayer');
       const hasShadingError = pageDiv.hasAttribute('data-shading-error');
       
+      // allowCopy 状態を確認（main.jsで設定された値を参照）
+      const firstSpan = textLayer ? textLayer.querySelector('span') : null;
+      // data-allow-copy属性がなければ、初回のuserSelect状態から推測
+      let allowCopy = false;
+      if (pageDiv.hasAttribute('data-allow-copy')) {
+        allowCopy = pageDiv.getAttribute('data-allow-copy') === 'true';
+      } else if (firstSpan) {
+        // 初回はtextLayerのspan状態から判定し、属性に保存
+        allowCopy = !(firstSpan.style.userSelect === 'none' || getComputedStyle(firstSpan).userSelect === 'none');
+        pageDiv.setAttribute('data-allow-copy', allowCopy ? 'true' : 'false');
+      }
+      
       if (mode === 'svg' && !hasShadingError) {
-        // SVGモード: SVG内テキストを表示、テキストレイヤは透明（Shadingエラーページは除外）
-        if (svgElem) { svgElem.style.pointerEvents = ''; svgElem.style.userSelect = ''; svgElem.querySelectorAll('text, tspan').forEach(t => { t.style.visibility = ''; t.style.display = ''; t.style.pointerEvents = ''; t.style.userSelect = ''; }); }
+        // SVGモード: SVG内テキストを表示（選択不可）、textLayerは透明だが選択可能（正しいUnicodeテキスト）
+        if (svgElem) { 
+          svgElem.style.pointerEvents = 'none'; 
+          svgElem.style.userSelect = 'none'; 
+          svgElem.querySelectorAll('text, tspan').forEach(t => { 
+            t.style.visibility = ''; 
+            t.style.display = ''; 
+            t.style.pointerEvents = 'none'; 
+            t.style.userSelect = 'none'; // SVGテキストは選択不可（グリフコードのため）
+          }); 
+        }
         if (textLayer) { 
           textLayer.querySelectorAll('span').forEach(s => { 
             s.style.setProperty('color', 'transparent', 'important');
             s.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
-            s.style.pointerEvents = 'none'; 
-            s.style.userSelect = 'none'; 
-            s.setAttribute('aria-hidden', 'true'); 
+            // コピー許可の場合は透明でも選択可能にする
+            s.style.pointerEvents = allowCopy ? 'auto' : 'none'; 
+            s.style.userSelect = allowCopy ? 'text' : 'none'; 
+            s.style.WebkitUserSelect = allowCopy ? 'text' : 'none'; 
+            s.style.MozUserSelect = allowCopy ? 'text' : 'none'; 
+            if (allowCopy) {
+              s.removeAttribute('aria-hidden');
+            } else {
+              s.setAttribute('aria-hidden', 'true'); 
+            }
           }); 
-          textLayer.style.pointerEvents = 'none'; 
-          textLayer.style.userSelect = 'none'; 
+          textLayer.style.pointerEvents = allowCopy ? 'auto' : 'none'; 
+          textLayer.style.userSelect = allowCopy ? 'text' : 'none'; 
+          textLayer.style.zIndex = '3000'; 
         }
       } else if (mode === 'overlay' || hasShadingError) {
         // オーバーレイモードまたはShadingエラー: SVG内テキストを非表示、テキストレイヤを表示
