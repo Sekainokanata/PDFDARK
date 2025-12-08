@@ -31,7 +31,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-//======================ここから追加============================================
+
 // タブの情報（URLなど）が更新されたときに発火するイベントリスナー
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') return; // complete 以外は無視

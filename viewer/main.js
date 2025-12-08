@@ -4,7 +4,11 @@
 
 window.startViewer = async function startViewer(){
   // pdf.worker.js / cmaps のパスを拡張内の URL で設定
-  try { pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('pdfjs/pdf.worker.js'); } catch(_) {}
+  try { 
+    pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('pdfjs/pdf.worker.js'); 
+  } 
+  catch(_) {}
+
   const cMapUrlForExtension = chrome.runtime.getURL('pdfjs/cmaps/');
 
   // 旧: MLサンドボックスの事前ウォームアップは廃止
@@ -12,15 +16,39 @@ window.startViewer = async function startViewer(){
   const params = new URLSearchParams(location.search);
   const file = params.get('file');
   if (file) {
-    try { const urlObj = new URL(file, location.href); const filename = urlObj.pathname.split('/').pop() || 'PDF'; document.title = decodeURIComponent(filename); }
-    catch (e) { const name = (file.split('/').pop() || 'PDF'); try { document.title = decodeURIComponent(name); } catch(_) { document.title = name; } }
+    try { 
+      const urlObj = new URL(file, location.href); 
+      const filename = urlObj.pathname.split('/').pop() || 'PDF'; 
+      document.title = decodeURIComponent(filename); 
+    }
+    catch (e) { 
+      const name = (file.split('/').pop() || 'PDF'); 
+      try { 
+        document.title = decodeURIComponent(name); 
+      } 
+      catch(_) { 
+        document.title = name; 
+      } 
+    }
   }
 
   const origContainer = document.getElementById('container');
-  if (!file) { origContainer.textContent = 'No file specified.'; return; }
+  if (!file) { 
+    origContainer.textContent = 'No file specified.'; 
+    return; 
+  }
 
-  let resp; try { resp = await fetch(file); if (!resp.ok) throw new Error('Failed to fetch PDF: ' + resp.status); }
-  catch(e){ origContainer.textContent = 'Fetch error: ' + e.message; return; }
+  let resp; 
+  try { 
+    resp = await fetch(file); 
+    if (!resp.ok) {
+      throw new Error('Failed to fetch PDF: ' + resp.status); 
+    }
+  }
+  catch(e){ 
+    origContainer.textContent = 'Fetch error: ' + e.message; 
+    return; 
+  }
   const arrayBuffer = await resp.arrayBuffer();
   // pdfArrayBufferは保持せずメモリ削減（必要時に再フェッチ）
   window.__viewer_pdfUrl = file;
@@ -40,7 +68,14 @@ window.startViewer = async function startViewer(){
       if (e.ctrlKey) {
         e.preventDefault();
         let current = 1.0;
-        try { const txt = (ui.zoomVal.value || '100%').toString().replace('%',''); const v = parseFloat(txt); if (isFinite(v) && v>0) current = v/100; } catch(_) {}
+        try { 
+          const txt = (ui.zoomVal.value || '100%').toString().replace('%',''); 
+          const v = parseFloat(txt); 
+          if (isFinite(v) && v > 0) {
+            current = v / 100; 
+          }
+        } 
+        catch(_) {}
 
         const K = 0.006; // 感度係数（小さく→低感度/大きく→高感度）
         const factor = Math.exp(-e.deltaY * K);
@@ -63,22 +98,41 @@ window.startViewer = async function startViewer(){
   } catch(_) {}
 
   // ハイライトトグルボタン追加 + 監視
-  try { window.ensureHighlightToggle(ui); } catch(_) {}
-  try { window.setupHighlightObserver(); } catch(_) {}
+  try { 
+    window.ensureHighlightToggle(ui); 
+  } 
+  catch(_) {}
+  
+  try { 
+    window.setupHighlightObserver(); 
+  } 
+  catch(_) {}
+  
   // ダークモードトグル（UI配線）
-  try { window.ensureDarkModeToggle(ui); } catch(_) {}
+  try { 
+    window.ensureDarkModeToggle(ui); 
+  } 
+  catch(_) {}
 
   const container = ui.pagesHolder;
 
   const permInfo = await window.detectCopyPermission(pdf);
   
-  const allowCopy = (permInfo.canCopy === null) ? true : !!permInfo; console.log('PDF permission raw:', permInfo.rawPerms, 'allowCopy:', allowCopy);
+  const allowCopy = (permInfo.canCopy === null) ? true : !!permInfo; 
+  console.log('PDF permission raw:', permInfo.rawPerms, 'allowCopy:', allowCopy);
   let removeCopyBlockers = null;
   if (!allowCopy) {
     removeCopyBlockers = window.installCopyBlockers(container);
   }
 
-  const curMode = (function(){ try { return localStorage.getItem('viewerTextMode') || 'svg'; } catch(_) { return 'svg'; } })();
+  const curMode = (function(){ 
+    try { 
+      return localStorage.getItem('viewerTextMode') || 'svg'; 
+    } 
+    catch(_) { 
+      return 'svg'; 
+    } 
+  })();
 
   // ダークモードの初期状態を先に適用（ページレンダリング前）
   // これにより、初回起動時でもダークモードがONの場合、正しく色反転される
@@ -489,8 +543,12 @@ window.startViewer = async function startViewer(){
   }
 
   // 配線後に初期スケール/モードを適用
-  try { window.__viewer_applyScaleToAllPages(1.0); } catch(_) {}
-  try { window.__viewer_applyMode(curMode); } catch(_) {}
+  try { 
+    window.__viewer_applyScaleToAllPages(1.0); 
+  } catch(_) {}
+  try { 
+    window.__viewer_applyMode(curMode); 
+  } catch(_) {}
   // 初期ダークモード状態適用は不要（ページレンダリング時に既に適用済み）
   // ページレンダリングループ内でshouldApplyDarkModeInitiallyに基づいて処理されている
 
