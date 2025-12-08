@@ -1,24 +1,27 @@
-# PDFDARK Viewer 分割構成メモ
+# 著作権表示
+=== PDF.js ===
+Copyright © Mozilla Foundation and contributors.
+Licensed under the Apache License, Version 2.0.
+See http://www.apache.org/licenses/LICENSE-2.0 for the full license text.
 
-本リファクタでは `viewer.js` を以下の複数ファイルに分割し、責務ごとに整理しました。すべて従来どおり `<script>` 羅列で読み込む構成（ES Modules 未使用）です。
+=== OpenCV.js ===
+Copyright © 2000–2025 OpenCV team.
+Licensed under the Apache License, Version 2.0.
+See http://www.apache.org/licenses/LICENSE-2.0 and https://opencv.org/license/ for details.
 
-- `viewer/scroll.js`: ページスクロールのユーティリティ（`scrollToPageTopByIndex` 等）
-- `viewer/ui.js`: ツールバー・ページホルダなど UI シェルの生成（`window.__viewer_ui` を提供）
-- `viewer/renderer.js`: PDF 権限チェック、SVGスマート反転、テキストレイヤ、画像高品質反転、ハイライトトグルの実装
-- `viewer/toolbar.js`: ズーム/フィット/ページ移動、モード切替（オリジナル/フォント調整）、ダウンロード/印刷の配線
-- `viewer/main.js`: 旧 `startViewer` の本体。PDF を fetch -> `pdfjsLib.getDocument` -> UI 構築 -> 各ページ描画 -> 初期スケール/モード適用
+# 謝辞
+本ソフトウェアは、PDF.jsおよびOpenCV.jsのオープンソースライブラリを利用しています。これらのライブラリの開発者に深く感謝いたします。
+また、友人のsatoyaa氏には、このアプリケーションの開発において多大な助言とサポートをいただきました。心より感謝申し上げます。
 
-`viewer.html` の読み込み順も更新済みです。
+# Chrome拡張機能としての利用方法
+このソフトウェアはChrome拡張機能として動作します。Chromeウェブストアからダウンロードしてインストールすることが可能です。
+https://chromewebstore.google.com/detail/invert-pdf-viewer/klndmcomjnjmcappeiibgklmlhdcihhe?hl=ja
 
-## 起動手順
+最新バージョンを入手したい方はGithubから以下の手順でインストールしてください。
+1. ZIPファイルをダウンロードします。
+2. 解凍した後、Chromeの拡張機能管理画面（chrome://extensions/）を開きます。
+3. 右上の「デベロッパーモード」を有効にします。
+4. 「パッケージ化されていない拡張機能を読み込む」をクリックし、解凍したフォルダを選択します。
+5. 拡張機能がインストールされ、有効になります。
 
-- 拡張の `viewer.html` を開く（`?file=<PDFのURL>` をクエリに指定）。
-- `viewer-run.js` が `startViewer()` を自動実行します。
-- `manifest.json` では `pdfjs/pdf.worker.js` と `pdfjs/cmaps/*` を `web_accessible_resources` として公開済みです。
-
-## 補足
-
-- 既存のグローバル関数名は極力維持し、DOM 依存部も互換動作するよう配慮しています。
-- 画像の反転では大きすぎる画像は CSS filter にフォールバックします。
-- ハイライトトグルは新規ページ追加にも自動適用されるよう MutationObserver を導入しました。
-- バグに気づいた場合は `viewer/main.js` を起点に、該当モジュールへ辿って修正してください。
+バグや改善点があれば、GitHubのリポジトリでIssueを作成してください。
