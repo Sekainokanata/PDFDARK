@@ -1,13 +1,13 @@
 # 著作権表示
-=== PDF.js ===
-Copyright © Mozilla Foundation and contributors.
-Licensed under the Apache License, Version 2.0.
-See http://www.apache.org/licenses/LICENSE-2.0 for the full license text.
+=== PDF.js ===<br>
+Copyright © Mozilla Foundation and contributors.<br>
+Licensed under the Apache License, Version 2.0.<br>
+See http://www.apache.org/licenses/LICENSE-2.0 for the full license text.<br>
 
-=== OpenCV.js ===
-Copyright © 2000–2025 OpenCV team.
-Licensed under the Apache License, Version 2.0.
-See http://www.apache.org/licenses/LICENSE-2.0 and https://opencv.org/license/ for details.
+=== OpenCV.js ===<br>
+Copyright © 2000–2025 OpenCV team.<br>
+Licensed under the Apache License, Version 2.0.<br>
+See http://www.apache.org/licenses/LICENSE-2.0 and https://opencv.org/license/ for details.<br>
 
 # 謝辞
 本ソフトウェアは、PDF.jsおよびOpenCV.jsのオープンソースライブラリを利用しています。これらのライブラリの開発者に深く感謝いたします。
