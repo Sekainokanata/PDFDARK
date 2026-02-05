@@ -138,7 +138,7 @@ window.startViewer = async function startViewer(){
   // これにより、初回起動時でもダークモードがONの場合、正しく色反転される
   const shouldApplyDarkModeInitially = window.__viewer_darkModeEnabled;
 
-  // メモリ削減: 初期表示は最初の3ページのみレンダリング，残りは10ページずつレンダリング
+  // メモリ削減: 初期表示は最初の10ページのみレンダリング，残りは10ページずつレンダリング
   const INITIAL_RENDER_PAGES = 10;
   const RENDER_PAGES = 10;
   
@@ -206,9 +206,75 @@ window.startViewer = async function startViewer(){
     container.appendChild(pageWrapper);
   }
 
-  // 最初の数ページのみ実際にレンダリング
-  for (let p = 1; p <= Math.min(INITIAL_RENDER_PAGES, pdf.numPages); p++) {
-    await renderPageContent(p, pdf, container, allowCopy, curMode);
+  // レンダリング済みページを追跡（遅延レンダリングシステム用）
+  window.__viewer_renderedPages = new Set();
+  
+  // 遅延レンダリングシステム（メモリ削減）
+  let renderDebounceTimer = null;
+  const renderQueue = new Set();
+  let isRendering = false;
+  
+  async function processRenderQueue() {
+    if (isRendering || renderQueue.size === 0) return;
+    isRendering = true;
+    
+    const pageNum = Array.from(renderQueue)[0];
+    renderQueue.delete(pageNum);
+    
+    try {
+      await renderPageContent(pageNum, pdf, container, allowCopy, curMode);
+      window.__viewer_renderedPages.add(pageNum);
+      console.log(`Lazy rendered page ${pageNum}`);
+    } catch(e) {
+      console.error(`Failed to render page ${pageNum}:`, e);
+    }
+    
+    isRendering = false;
+    // 次のページをレンダリング
+    if (renderQueue.size > 0) {
+      requestAnimationFrame(() => processRenderQueue());
+    }
+  }
+  
+  function updateVisiblePages() {
+    if (renderDebounceTimer) {
+      clearTimeout(renderDebounceTimer);
+    }
+    renderDebounceTimer = setTimeout(async () => {
+      const wrapper = ui.wrapper;
+      const viewportTop = wrapper.scrollTop;
+      const viewportBottom = viewportTop + wrapper.clientHeight;
+      const RENDER_MARGIN = 5000; // プリレンダリングマージン（ピクセル）
+      
+      const pages = ui.pagesHolder.querySelectorAll('.page');
+      const visiblePages = [];
+      
+      pages.forEach((pageDiv) => {
+        const pageNum = parseInt(pageDiv.getAttribute('data-page-num'));
+        if (!pageNum) return;
+        
+        const rect = pageDiv.getBoundingClientRect();
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const pageTop = rect.top - wrapperRect.top + viewportTop;
+        const pageBottom = pageTop + rect.height;
+        
+        const isVisible = pageBottom >= viewportTop - RENDER_MARGIN &&
+                         pageTop <= viewportBottom + RENDER_MARGIN;
+        
+        if (isVisible && !window.__viewer_renderedPages.has(pageNum)) {
+          visiblePages.push(pageNum);
+        }
+      });
+      
+      // 可視範囲のページをレンダリングキューに追加（優先度順）
+      visiblePages.sort((a, b) => a - b);
+      visiblePages.forEach(pageNum => {
+        renderQueue.add(pageNum);
+      });
+      
+      // レンダリングキュー処理開始
+      processRenderQueue();
+    }, 150); // 150msのデバウンス
   }
 
   // ページレンダリング関数
@@ -430,8 +496,6 @@ window.startViewer = async function startViewer(){
         if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
       }
 
-      // 以降の二重処理を削除(上で分岐済み)
-      
       // レンダリング完了後、ページオブジェクトをクリーンアップ
       try { page.cleanup(); } catch(_) {}
 
@@ -439,164 +503,40 @@ window.startViewer = async function startViewer(){
       console.error(`Error rendering page ${p}`, err);
     }
   }
-  
-  // レンダリング済みページを追跡
-  window.__viewer_renderedPages = new Set();
-  for (let i = 1; i <= Math.min(INITIAL_RENDER_PAGES, pdf.numPages); i++) {
-    window.__viewer_renderedPages.add(i);
-  }
 
-  // 遅延レンダリングシステム（メモリ削減）
-  let renderDebounceTimer = null;
-  const renderQueue = new Set();
-  let isRendering = false;
-  
-  async function processRenderQueue() {
-    if (isRendering || renderQueue.size === 0) return;
-    isRendering = true;
-    
-    const pageNum = Array.from(renderQueue)[0];
-    renderQueue.delete(pageNum);
-    
-    try {
-      await renderPageContent(pageNum, pdf, container, allowCopy, curMode);
-      window.__viewer_renderedPages.add(pageNum);
-      console.log(`Lazy rendered page ${pageNum}`);
-    } catch(e) {
-      console.error(`Failed to render page ${pageNum}:`, e);
-    }
-    
-    isRendering = false;
-    // 次のページをレンダリング
-    if (renderQueue.size > 0) {
-      requestAnimationFrame(() => processRenderQueue());
-    }
-  }
-  
-  function updateVisiblePages() {
-    if (renderDebounceTimer) {
-      clearTimeout(renderDebounceTimer);
-    }
-    renderDebounceTimer = setTimeout(async () => {
-      const wrapper = ui.wrapper;
-      const viewportTop = wrapper.scrollTop;
-      const viewportBottom = viewportTop + wrapper.clientHeight;
-      const RENDER_MARGIN = 5000; // プリレンダリングマージン（ピクセル）
-      const UNLOAD_MARGIN = 10000; // アンロードマージン（ピクセル）
-      
-      const pages = ui.pagesHolder.querySelectorAll('.page');
-      const visiblePages = [];
-      const farPages = [];
-      
-      pages.forEach((pageDiv) => {
-        const pageNum = parseInt(pageDiv.getAttribute('data-page-num'));
-        if (!pageNum) return;
-        
-        const rect = pageDiv.getBoundingClientRect();
-        const wrapperRect = wrapper.getBoundingClientRect();
-        const pageTop = rect.top - wrapperRect.top + viewportTop;
-        const pageBottom = pageTop + rect.height;
-        
-        const isVisible = pageBottom >= viewportTop - RENDER_MARGIN &&
-                         pageTop <= viewportBottom + RENDER_MARGIN;
-        const isFar = pageBottom < viewportTop - UNLOAD_MARGIN ||
-                     pageTop > viewportBottom + UNLOAD_MARGIN;
-        
-        if (isVisible && !window.__viewer_renderedPages.has(pageNum)) {
-          visiblePages.push(pageNum);
-        } else if (isFar && window.__viewer_renderedPages.has(pageNum)) {
-          farPages.push({ pageNum, pageDiv });
-        }
-      });
-      
-      // 可視範囲のページをレンダリングキューに追加
-      visiblePages.forEach(pageNum => {
-        renderQueue.add(pageNum);
-      });
-      
-      // 遠くのページをアンロード（メモリ削減）
-      for (const { pageNum, pageDiv } of farPages) {
-        const isPlaceholder = pageDiv.getAttribute('data-placeholder') === 'true';
-        if (!isPlaceholder) {
-          // 実際のコンテンツをプレースホルダーに置き換え
-          const pageWrapper = pageDiv.closest('.page-wrapper');
-          if (pageWrapper) {
-            const newPlaceholder = await createPlaceholderPage(pageNum);
-            pageWrapper.replaceWith(newPlaceholder);
-            window.__viewer_renderedPages.delete(pageNum);
-            console.log(`Unloaded page ${pageNum} to save memory`);
-          }
-        }
-      }
-      
-      // レンダリングキュー処理開始
-      processRenderQueue();
-    }, 150); // 150msのデバウンス
-  }
-  
   // スクロールイベントリスナーを追加
   try {
     ui.wrapper.addEventListener('scroll', updateVisiblePages, { passive: true });
-    // 初期状態で一度実行
-    updateVisiblePages();
   } catch(e) {
-    console.warn('Failed to setup visible page optimization:', e);
+    console.warn('Failed to setup scroll listener:', e);
   }
 
-  // バックグラウンド読み込みシステム（初期ロード完了後、3ページずつ順番に読み込み）
-  let backgroundRenderNextPage = INITIAL_RENDER_PAGES + 1; // 次にバックグラウンドで読み込むページ番号
-  let isBackgroundRendering = false;
-  
-  async function processBackgroundRendering() {
-    if (isBackgroundRendering || backgroundRenderNextPage > pdf.numPages) {
-      return; // 既に全ページをレンダリング完了
-    }
+  // 初期ロード: 現在のビューポート内のページを検出して優先的にレンダリング
+  async function performInitialRender() {
+    // 次フレームでビューポート計算（DOM配置完了後）
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     
-    isBackgroundRendering = true;
-    const batchSize = RENDER_PAGES; // 3ページずつ読み込む
+    // 可視ページを検出してキューに追加
+    updateVisiblePages();
     
-    try {
-      // 3ページずつレンダリング
-      for (let i = 0; i < batchSize && backgroundRenderNextPage <= pdf.numPages; i++) {
-        const pageNum = backgroundRenderNextPage;
-        backgroundRenderNextPage++;
-        
-        try {
-          await renderPageContent(pageNum, pdf, container, allowCopy, curMode);
-          window.__viewer_renderedPages.add(pageNum);
-          console.log(`Background rendered page ${pageNum}`);
-        } catch(e) {
-          console.error(`Failed to background render page ${pageNum}:`, e);
-        }
-        
-        // 次のページへ進む前に少し待機（UI操作のブロッキングを回避）
-        await new Promise(resolve => setTimeout(resolve, 50));
+    // バックグラウンド読み込み: 可視ページ以外をキューに追加
+    const pages = Array.from(ui.pagesHolder.querySelectorAll('.page'));
+    for (const pageDiv of pages) {
+      const pageNum = parseInt(pageDiv.getAttribute('data-page-num'));
+      if (pageNum && !window.__viewer_renderedPages.has(pageNum)) {
+        renderQueue.add(pageNum);
       }
-    } catch(e) {
-      console.error('Background rendering error:', e);
     }
     
-    isBackgroundRendering = false;
-    
-    // さらにページがあれば、次のバッチをスケジュール
-    if (backgroundRenderNextPage <= pdf.numPages) {
-      // requestIdleCallback が利用可能ならそれを使用、なければ setTimeout を使用
-      if (typeof requestIdleCallback !== 'undefined') {
-        requestIdleCallback(() => processBackgroundRendering(), { timeout: 2000 });
-      } else {
-        setTimeout(() => processBackgroundRendering(), 500);
-      }
-    } else {
-      console.log('All pages background rendering completed');
-    }
+    // キュー処理開始
+    processRenderQueue();
   }
   
-  // バックグラウンド読み込み開始
+  // 初期レンダリング開始（非同期、次フレームで実行）
   try {
-    // 初期表示完了後、バックグラウンド読み込みを開始
-    setTimeout(() => processBackgroundRendering(), 500);
+    setTimeout(() => performInitialRender(), 50);
   } catch(e) {
-    console.warn('Failed to start background rendering:', e);
+    console.warn('Failed to perform initial render:', e);
   }
 
   // 配線後に初期スケール/モードを適用
@@ -611,14 +551,6 @@ window.startViewer = async function startViewer(){
 
   window.viewerCleanup = () => { 
     if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
-    // バックグラウンド読み込みを停止するフラグを設定
-    backgroundRenderNextPage = pdf.numPages + 1; // 次のページが存在しない状態に設定
-    isBackgroundRendering = true; // 処理中状態を維持して新たな処理を開始しない
-    if (removeCopyBlockers) removeCopyBlockers(); 
-    for (const v of window.objectUrlMap.values()) { 
-      if (v && v.url && v.url.startsWith('blob:')) URL.revokeObjectURL(v.url); 
-    } 
-    window.objectUrlMap.clear(); 
   };
   window.viewerPdf = pdf;
 
