@@ -138,8 +138,9 @@ window.startViewer = async function startViewer(){
   // これにより、初回起動時でもダークモードがONの場合、正しく色反転される
   const shouldApplyDarkModeInitially = window.__viewer_darkModeEnabled;
 
-  // メモリ削減: 初期表示は最初の3ページのみレンダリング
-  const INITIAL_RENDER_PAGES = 3;
+  // メモリ削減: 初期表示は最初の3ページのみレンダリング，残りは10ページずつレンダリング
+  const INITIAL_RENDER_PAGES = 10;
+  const RENDER_PAGES = 10;
   
   // ページメタデータを保持（遅延レンダリング用）
   window.__viewer_pageMetadata = new Map();
@@ -542,6 +543,62 @@ window.startViewer = async function startViewer(){
     console.warn('Failed to setup visible page optimization:', e);
   }
 
+  // バックグラウンド読み込みシステム（初期ロード完了後、3ページずつ順番に読み込み）
+  let backgroundRenderNextPage = INITIAL_RENDER_PAGES + 1; // 次にバックグラウンドで読み込むページ番号
+  let isBackgroundRendering = false;
+  
+  async function processBackgroundRendering() {
+    if (isBackgroundRendering || backgroundRenderNextPage > pdf.numPages) {
+      return; // 既に全ページをレンダリング完了
+    }
+    
+    isBackgroundRendering = true;
+    const batchSize = RENDER_PAGES; // 3ページずつ読み込む
+    
+    try {
+      // 3ページずつレンダリング
+      for (let i = 0; i < batchSize && backgroundRenderNextPage <= pdf.numPages; i++) {
+        const pageNum = backgroundRenderNextPage;
+        backgroundRenderNextPage++;
+        
+        try {
+          await renderPageContent(pageNum, pdf, container, allowCopy, curMode);
+          window.__viewer_renderedPages.add(pageNum);
+          console.log(`Background rendered page ${pageNum}`);
+        } catch(e) {
+          console.error(`Failed to background render page ${pageNum}:`, e);
+        }
+        
+        // 次のページへ進む前に少し待機（UI操作のブロッキングを回避）
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    } catch(e) {
+      console.error('Background rendering error:', e);
+    }
+    
+    isBackgroundRendering = false;
+    
+    // さらにページがあれば、次のバッチをスケジュール
+    if (backgroundRenderNextPage <= pdf.numPages) {
+      // requestIdleCallback が利用可能ならそれを使用、なければ setTimeout を使用
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(() => processBackgroundRendering(), { timeout: 2000 });
+      } else {
+        setTimeout(() => processBackgroundRendering(), 500);
+      }
+    } else {
+      console.log('All pages background rendering completed');
+    }
+  }
+  
+  // バックグラウンド読み込み開始
+  try {
+    // 初期表示完了後、バックグラウンド読み込みを開始
+    setTimeout(() => processBackgroundRendering(), 500);
+  } catch(e) {
+    console.warn('Failed to start background rendering:', e);
+  }
+
   // 配線後に初期スケール/モードを適用
   try { 
     window.__viewer_applyScaleToAllPages(1.0); 
@@ -554,6 +611,9 @@ window.startViewer = async function startViewer(){
 
   window.viewerCleanup = () => { 
     if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
+    // バックグラウンド読み込みを停止するフラグを設定
+    backgroundRenderNextPage = pdf.numPages + 1; // 次のページが存在しない状態に設定
+    isBackgroundRendering = true; // 処理中状態を維持して新たな処理を開始しない
     if (removeCopyBlockers) removeCopyBlockers(); 
     for (const v of window.objectUrlMap.values()) { 
       if (v && v.url && v.url.startsWith('blob:')) URL.revokeObjectURL(v.url); 
