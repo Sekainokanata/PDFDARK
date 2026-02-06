@@ -114,21 +114,21 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     ui.zoomVal.value = Math.round(scale * 100) + '%';
 
     // スクロール位置を即座に適用（transform のスケールを考慮）
+    // 安定化のため、ズーム中は横方向を左揃えにする
     if (wrapper && oldScale > 0) {
-      wrapper.scrollLeft = Math.max(0, newScrollLeft);
+      // 横は左揃え
+      wrapper.scrollLeft = 0;
+      // 縦は新しいトップ位置を適用
       wrapper.scrollTop = Math.max(0, newScrollTop);
       
       // レイアウト確定後に微調整と次の処理
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           try {
-            // transform のみなので scrollWidth/scrollHeight は変わらない
-            // 視覚的なサイズから制限値を計算
-            const totalBaseWidth = metas.reduce((sum, m) => Math.max(sum, m.baseW), 0);
-            const visualMaxScrollLeft = Math.max(0, totalBaseWidth * currentScale - wrapper.clientWidth);
+            // 横は左揃えを維持
+            wrapper.scrollLeft = 0;
+            // 縦のみ適切にクランプ
             const visualMaxScrollTop = Math.max(0, wrapper.scrollHeight * (currentScale / oldScale) - wrapper.clientHeight);
-            
-            wrapper.scrollLeft = Math.max(0, Math.min(newScrollLeft, visualMaxScrollLeft));
             wrapper.scrollTop = Math.max(0, Math.min(newScrollTop, visualMaxScrollTop));
           } catch(e) {
             console.warn('Scroll position adjustment failed:', e);
