@@ -46,6 +46,8 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     }
     
     isScaling = true;
+    // ズーム中フラグを設定（renderPageContent で重い処理をスキップ）
+    window.__viewer_isZooming = true;
     const wrapper = ui.wrapper;
     
     // 現在のスクロール位置とビューポート中心を記録（確定値）
@@ -53,37 +55,57 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     const oldScrollTop = wrapper.scrollTop;
     const oldScale = currentScale;
     
-    // ビューポートの中心座標（スケール変更前の座標系）
-    const centerX = oldScrollLeft + wrapper.clientWidth / 2;
-    const centerY = oldScrollTop + wrapper.clientHeight / 2;
+    // 先に pages を取得して基準幅/高さを得る
+    const pages = Array.from(ui.pagesHolder.querySelectorAll('.page'));
+
+    // transform 時の最大スクロール値（DOM座標系）
+    const maxScrollLeft = Math.max(0, wrapper.scrollWidth - wrapper.clientWidth);
+    const maxScrollTop = Math.max(0, wrapper.scrollHeight - wrapper.clientHeight);
+
+    // base 幅/高さを決定（優先: data-base-* 属性、無ければ style/client を oldScale で割って復元）
+    let baseW = 0, baseH = 0;
+    if (pages[0]) {
+      const p0 = pages[0];
+      const attrW = p0.getAttribute('data-base-width');
+      const attrH = p0.getAttribute('data-base-height');
+      if (attrW) baseW = parseFloat(attrW) || 0;
+      if (attrH) baseH = parseFloat(attrH) || 0;
+      if (!baseW) {
+        const styleW = parseFloat(p0.style.width) || p0.clientWidth || 0;
+        baseW = oldScale > 0 ? styleW / oldScale : styleW;
+      }
+      if (!baseH) {
+        const styleH = parseFloat(p0.style.height) || p0.clientHeight || 0;
+        baseH = oldScale > 0 ? styleH / oldScale : styleH;
+      }
+    } else {
+      baseW = wrapper.scrollWidth || 0;
+      baseH = wrapper.scrollHeight || 0;
+    }
+
+    // DOM確定時に合わせる式: newScroll = (base * scale / 2) - (viewport / 2)
+    const cw = wrapper.clientWidth;
+    const ch = wrapper.clientHeight;
+    const newScrollLeft = Math.max(0, Math.min(baseW * scale / 2 - cw / 2, maxScrollLeft));
+    const newScrollTop = Math.max(0, Math.min(baseH * scale / 2 - ch / 2, maxScrollTop));
     
-    // スクロール位置を事前計算
-    const scaleRatio = scale / oldScale;
-    const newScrollLeft = centerX * scaleRatio - wrapper.clientWidth / 2;
-    const newScrollTop = centerY * scaleRatio - wrapper.clientHeight / 2;
-    
-    const pages = ui.pagesHolder.querySelectorAll('.page');
-    
-    // ページサイズとtransformを同時に更新（レイアウトの一貫性を保つ）
-    pages.forEach(pageDiv => {
-      const baseW = parseFloat(pageDiv.getAttribute('data-base-width') || pageDiv.style.width || pageDiv.clientWidth) || 0;
-      const baseH = parseFloat(pageDiv.getAttribute('data-base-height') || pageDiv.style.height || pageDiv.clientHeight) || 0;
-      
-      // ページの外枠サイズを更新
-      pageDiv.style.width = (baseW * scale) + 'px';
-      pageDiv.style.height = (baseH * scale) + 'px';
-      
-      // paperのtransformを目標スケールに設定
+    // 先読み: baseW/baseH と paper を収集（読み取りをまとめる）
+    const metas = pages.map(pageDiv => {
+      const baseW = parseFloat(pageDiv.getAttribute('data-base-width') || pageDiv.style.width) || 0;
+      const baseH = parseFloat(pageDiv.getAttribute('data-base-height') || pageDiv.style.height) || 0;
       const paper = pageDiv.querySelector('.paper');
+      return { pageDiv, baseW, baseH, paper };
+    });
+    
+    // 提案B: ズーム中は transform のみ更新（GPU合成レイヤで高速処理）
+    // pageDiv.style.width/height は触らない（レイアウト計算スキップ）
+    metas.forEach(m => {
+      const { paper } = m;
       if (paper) {
         paper.style.transform = `scale(${scale})`;
         paper.style.transformOrigin = '0 0';
         paper.setAttribute('data-scale', scale);
-        
-        // 高品質レンダリング待ちフラグ（後で実際のサイズ変更が必要な場合用）
-        if (!options.skipQuickScale) {
-          paper.setAttribute('data-needs-quality-render', 'true');
-        }
+        paper.setAttribute('data-needs-quality-render', 'true');
       }
     });
     
@@ -91,7 +113,7 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     currentScale = scale; 
     ui.zoomVal.value = Math.round(scale * 100) + '%';
 
-    // スクロール位置を即座に適用
+    // スクロール位置を即座に適用（transform のスケールを考慮）
     if (wrapper && oldScale > 0) {
       wrapper.scrollLeft = Math.max(0, newScrollLeft);
       wrapper.scrollTop = Math.max(0, newScrollTop);
@@ -100,43 +122,50 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           try {
-            const maxScrollLeft = Math.max(0, wrapper.scrollWidth - wrapper.clientWidth);
-            const maxScrollTop = Math.max(0, wrapper.scrollHeight - wrapper.clientHeight);
+            // transform のみなので scrollWidth/scrollHeight は変わらない
+            // 視覚的なサイズから制限値を計算
+            const totalBaseWidth = metas.reduce((sum, m) => Math.max(sum, m.baseW), 0);
+            const visualMaxScrollLeft = Math.max(0, totalBaseWidth * currentScale - wrapper.clientWidth);
+            const visualMaxScrollTop = Math.max(0, wrapper.scrollHeight * (currentScale / oldScale) - wrapper.clientHeight);
             
-            wrapper.scrollLeft = Math.max(0, Math.min(newScrollLeft, maxScrollLeft));
-            wrapper.scrollTop = Math.max(0, Math.min(newScrollTop, maxScrollTop));
+            wrapper.scrollLeft = Math.max(0, Math.min(newScrollLeft, visualMaxScrollLeft));
+            wrapper.scrollTop = Math.max(0, Math.min(newScrollTop, visualMaxScrollTop));
           } catch(e) {
             console.warn('Scroll position adjustment failed:', e);
           }
           
-          // 処理完了、保留中のスケール値があれば適用
+          // 処理完了、ズーム中フラグを解除
+          window.__viewer_isZooming = false;
           isScaling = false;
           if (pendingScale !== null) {
             const nextScale = pendingScale;
             pendingScale = null;
             applyScaleToAllPages(nextScale);
           } else {
-            // 高品質レンダリングをスケジュール（操作が落ち着いてから）
-            // 注: 現在の実装ではCSS transformで十分な品質が得られるため、
-            // 追加の高品質レンダリングは省略。必要に応じて将来実装可能。
-            if (highQualityRenderTimeout) {
-              clearTimeout(highQualityRenderTimeout);
-            }
+            // 操作が落ち着いたら（debounce）実レイアウトを書き込む
+            if (highQualityRenderTimeout) clearTimeout(highQualityRenderTimeout);
             highQualityRenderTimeout = setTimeout(() => {
-              // 将来的にここで高解像度レンダリングなどを実装可能
-              const pages = ui.pagesHolder.querySelectorAll('.page');
-              pages.forEach(pageDiv => {
-                const paper = pageDiv.querySelector('.paper');
-                if (paper && paper.getAttribute('data-needs-quality-render') === 'true') {
-                  paper.removeAttribute('data-needs-quality-render');
-                  // 必要に応じてCanvasの再レンダリングなどを実行
-                }
+              // 一括書き込みは RAF 内で行う
+              requestAnimationFrame(() => {
+                try {
+                  // 実際のレイアウトサイズを書き込む（これで DOM リフロー）
+                  metas.forEach(m => {
+                    const { pageDiv, baseW, baseH, paper } = m;
+                    pageDiv.style.width = (baseW * currentScale) + 'px';
+                    pageDiv.style.height = (baseH * currentScale) + 'px';
+                    if (paper && paper.getAttribute('data-needs-quality-render') === 'true') {
+                      paper.removeAttribute('data-needs-quality-render');
+                      // ここで必要ならCanvasの再レンダリング等を行う（noopで保留）
+                    }
+                  });
+                } catch (e) { console.warn('Batch layout update failed', e); }
               });
-            }, 300); // 300ms後
+            }, 200); // 200ms デバウンスで実行
           }
         });
       });
     } else {
+      window.__viewer_isZooming = false;
       isScaling = false;
       if (pendingScale !== null) {
         const nextScale = pendingScale;
