@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Invert PDF Viewer",
-  "version": "1.0",
+  "version": "1.1",
   "description": "PDFの背景を黒、黒文字を白にして表示（画像保持）",
   "permissions": ["activeTab", "storage"],
   "host_permissions": ["<all_urls>"],
@@ -13,7 +13,7 @@
     "default_popup": "popup.html"
   },
   "icons": {
-    "2048": "icon2048.png"
+    "2048": "images/darkmode.png"
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: blob:;",
@@ -31,8 +31,7 @@
         "pdfjs/cmaps/*",
         "vendor/opencv/opencv.js",
         "vendor/opencv/opencv_js.wasm",
-        "images/*.png",
-        "icon2048.png"
+        "images/*.png"
       ],
       "matches": ["<all_urls>"]
     }
