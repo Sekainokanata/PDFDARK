@@ -89,7 +89,15 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
       wrapper.appendChild(spacer);
       wrapper.__zoomSpacer = spacer;
     }
-    spacer.style.height = Math.max(0, baseH * (scale - 1)) + 'px';
+    // scale < 1: レイアウト高 > 見た目高 → 負margin で余白を消す
+    // scale > 1: レイアウト高 < 見た目高 → スペーサーで不足分を追加
+    if (scale < 1) {
+      spacer.style.height = '0px';
+      pagesHolder.style.marginBottom = (baseH * (scale - 1)) + 'px';
+    } else {
+      pagesHolder.style.marginBottom = '0px';
+      spacer.style.height = Math.max(0, baseH * (scale - 1)) + 'px';
+    }
 
     currentScale = scale;
     ui.zoomVal.value = Math.round(scale * 100) + '%';
