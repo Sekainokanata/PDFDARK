@@ -77,6 +77,9 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     pagesHolder.style.transform = `scale(${scale})`;
     pagesHolder.style.transformOrigin = 'center top';
     // スペーサー div で縦スクロール可能範囲を確保（1要素のみサイズ変更）
+    // transform: scale() はレイアウト寸法を変えないため、スペーサーで追加分を補う
+    // pagesHolder のレイアウト高 = baseH は既にスクロール領域に含まれるので、
+    // スペーサーには scale による「超過分」だけ設定する
     let spacer = wrapper.__zoomSpacer;
     if (!spacer) {
       spacer = document.createElement('div');
@@ -86,7 +89,7 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
       wrapper.appendChild(spacer);
       wrapper.__zoomSpacer = spacer;
     }
-    spacer.style.height = (baseH * scale) + 'px';
+    spacer.style.height = Math.max(0, baseH * (scale - 1)) + 'px';
 
     currentScale = scale;
     ui.zoomVal.value = Math.round(scale * 100) + '%';
