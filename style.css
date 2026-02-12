@@ -332,3 +332,9 @@ input::-webkit-inner-spin-button {
 .highlightSample.purple{
     background-color: #800080;
 }
+
+/* ズーム中に現在ページの前後2ページ以外を非表示にする */
+.page.zoom-hidden {
+    opacity: 0;
+    pointer-events: none;
+}

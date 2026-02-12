@@ -38,6 +38,35 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   let _zoomRafId = null;      // 予約済み RAF の ID
   let _zoomEndTimer = null;   // ズーム終了遅延タイマー
   
+  // ズーム中に現在ページの前後2ページ以外を非表示にする関数
+  function updatePageVisibilityDuringZoom() {
+    const pages = Array.from(ui.pagesHolder.querySelectorAll('.page'));
+    if (pages.length === 0) return;
+    
+    // 現在のページインデックスを取得（1-based）
+    const currentPageNum = parseInt(ui.pageInput.value || '1', 10);
+    const currentIndex = currentPageNum - 1; // 0-based
+    
+    // 各ページに対して表示/非表示を切り替え
+    pages.forEach((page, index) => {
+      // 現在のページの前後2ページ以内かチェック
+      const distance = Math.abs(index - currentIndex);
+      if (distance <= 2) {
+        page.classList.remove('zoom-hidden');
+      } else {
+        page.classList.add('zoom-hidden');
+      }
+    });
+  }
+  
+  // 全ページを表示する関数
+  function showAllPages() {
+    const pages = Array.from(ui.pagesHolder.querySelectorAll('.page'));
+    pages.forEach(page => {
+      page.classList.remove('zoom-hidden');
+    });
+  }
+  
   // ---------- RAF ベースのズーム処理 ----------
   // 呼び出し側は applyScaleToAllPages(scale) を何度呼んでも OK。
   // 同一フレーム内の複数呼び出しは最後の値だけを 1 回の DOM 更新で処理する。
@@ -103,12 +132,17 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     ui.zoomVal.value = Math.round(scale * 100) + '%';
     wrapper.scrollTop = newScrollTop;
 
+    // ズーム中は現在ページの前後2ページ以外を非表示にする
+    updatePageVisibilityDuringZoom();
+
     // === 後処理 ===
     if (_zoomEndTimer) clearTimeout(_zoomEndTimer);
     _zoomEndTimer = setTimeout(() => {
       _zoomEndTimer = null;
       window.__viewer_isZooming = false;
-    }, 120);
+      // ズーム終了時に全ページを表示
+      showAllPages();
+    }, 250);
   }
   
   let defaultValue;
