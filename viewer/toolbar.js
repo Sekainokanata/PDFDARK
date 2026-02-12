@@ -34,117 +34,70 @@ window.wireDownloadButton = function wireDownloadButton(ui){
 window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
   const ui = window.__viewer_ui; if (!ui) return;
   let currentScale = 1.0;
-  let isScaling = false; // 連続拡大縮小の制御フラグ
-  let pendingScale = null; // 保留中のスケール値
-  let highQualityRenderTimeout = null; // 高品質レンダリング用タイマー
+  let _pendingScale = null;   // RAF で処理待ちのスケール値
+  let _zoomRafId = null;      // 予約済み RAF の ID
+  let _zoomEndTimer = null;   // ズーム終了遅延タイマー
   
+  // ---------- RAF ベースのズーム処理 ----------
+  // 呼び出し側は applyScaleToAllPages(scale) を何度呼んでも OK。
+  // 同一フレーム内の複数呼び出しは最後の値だけを 1 回の DOM 更新で処理する。
   function applyScaleToAllPages(scale, options = {}){
-    // 既にスケール処理中の場合、最新の値を保留して終了
-    if (isScaling) {
-      pendingScale = scale;
-      return;
-    }
-    
-    isScaling = true;
-    // ズーム中フラグを設定（renderPageContent で重い処理をスキップ）
+    _pendingScale = scale;
     window.__viewer_isZooming = true;
+    // ズーム終了タイマーをリセット（まだ操作中）
+    if (_zoomEndTimer) { clearTimeout(_zoomEndTimer); _zoomEndTimer = null; }
+    // まだ RAF が予約されていなければ予約
+    if (!_zoomRafId) {
+      _zoomRafId = requestAnimationFrame(_flushScale);
+    }
+  }
+
+  function _flushScale() {
+    _zoomRafId = null;
+    if (_pendingScale === null) return;
+
+    const scale = _pendingScale;
+    _pendingScale = null;
     const wrapper = ui.wrapper;
-    
-    // 現在のスクロール位置とビューポート中心を記録（確定値）
-    const oldScrollLeft = wrapper.scrollLeft;
+    const pagesHolder = ui.pagesHolder;
+
+    // === Read phase ===
     const oldScrollTop = wrapper.scrollTop;
     const oldScale = currentScale;
-    
-    // 先に pages を取得して基準幅/高さを得る
-    const pages = Array.from(ui.pagesHolder.querySelectorAll('.page'));
-
-    // transform 時の最大スクロール値（DOM座標系）
-    const maxScrollLeft = Math.max(0, wrapper.scrollWidth - wrapper.clientWidth);
-    const maxScrollTop = Math.max(0, wrapper.scrollHeight - wrapper.clientHeight);
-
-    // base 幅/高さを決定（優先: data-base-* 属性、無ければ style/client を oldScale で割って復元）
-    let baseW = 0, baseH = 0;
-    if (pages[0]) {
-      const p0 = pages[0];
-      const attrW = p0.getAttribute('data-base-width');
-      const attrH = p0.getAttribute('data-base-height');
-      if (attrW) baseW = parseFloat(attrW) || 0;
-      if (attrH) baseH = parseFloat(attrH) || 0;
-      if (!baseW) {
-        const styleW = parseFloat(p0.style.width) || p0.clientWidth || 0;
-        baseW = oldScale > 0 ? styleW / oldScale : styleW;
-      }
-      if (!baseH) {
-        const styleH = parseFloat(p0.style.height) || p0.clientHeight || 0;
-        baseH = oldScale > 0 ? styleH / oldScale : styleH;
-      }
-    } else {
-      baseW = wrapper.scrollWidth || 0;
-      baseH = wrapper.scrollHeight || 0;
-    }
-
-    // 画面中央を起点としたズーム: ビューポート中心のコンテンツ座標を維持
-    const cw = wrapper.clientWidth;
     const ch = wrapper.clientHeight;
+    const baseH = pagesHolder.scrollHeight;
+
+    // === Compute phase ===
     const ratio = (oldScale > 0) ? (scale / oldScale) : 1;
-    const newScrollLeft = (oldScrollLeft + cw / 2) * ratio - cw / 2;
-    const newScrollTop = (oldScrollTop + ch / 2) * ratio - ch / 2;
-    
-    // 先読み: baseW/baseH と paper を収集（読み取りをまとめる）
-    const metas = pages.map(pageDiv => {
-      const baseW = parseFloat(pageDiv.getAttribute('data-base-width') || pageDiv.style.width) || 0;
-      const baseH = parseFloat(pageDiv.getAttribute('data-base-height') || pageDiv.style.height) || 0;
-      const paper = pageDiv.querySelector('.paper');
-      return { pageDiv, baseW, baseH, paper };
-    });
-    
-    // transform + pageDiv サイズを同時に一括書き込み（DOMリフロー1回で完結）
-    // サイズを同期的に更新しないと scrollWidth/scrollHeight が旧値のままとなり、
-    // スクロール位置がクランプされてページがガクガク動く原因になる。
-    metas.forEach(m => {
-      const { pageDiv, baseW, baseH, paper } = m;
-      // コンテナサイズを先に更新（スクロール範囲を正しくする）
-      pageDiv.style.width = (baseW * scale) + 'px';
-      pageDiv.style.height = (baseH * scale) + 'px';
-      if (paper) {
-        paper.style.transform = `scale(${scale})`;
-        paper.style.transformOrigin = '0 0';
-        paper.setAttribute('data-scale', scale);
-        paper.setAttribute('data-needs-quality-render', 'true');
-      }
-    });
-    
-    // currentScale を即座に更新（次の呼び出しで正しい値を使うため）
-    currentScale = scale; 
-    ui.zoomVal.value = Math.round(scale * 100) + '%';
+    const newScrollTop = Math.max(0, (oldScrollTop + ch / 2) * ratio - ch / 2);
 
-    // スクロール位置を即座に適用（DOMサイズ更新済みなのでクランプが正しく機能する）
-    if (wrapper && oldScale > 0) {
-      wrapper.scrollLeft = Math.max(0, newScrollLeft);
-      wrapper.scrollTop = Math.max(0, newScrollTop);
+    // === Write phase ===
+    // transform: scale() はレイアウトをトリガしない（GPU合成のみ）
+    // transformOrigin を 'center top' にして中央揃えを維持
+    pagesHolder.style.transform = `scale(${scale})`;
+    pagesHolder.style.transformOrigin = 'center top';
+    // スペーサー div で縦スクロール可能範囲を確保（1要素のみサイズ変更）
+    let spacer = wrapper.__zoomSpacer;
+    if (!spacer) {
+      spacer = document.createElement('div');
+      spacer.style.pointerEvents = 'none';
+      spacer.style.visibility = 'hidden';
+      spacer.style.width = '1px';
+      wrapper.appendChild(spacer);
+      wrapper.__zoomSpacer = spacer;
     }
+    spacer.style.height = (baseH * scale) + 'px';
 
-    // 次フレームで isScaling を解除し、保留中のスケール処理を実行
-    requestAnimationFrame(() => {
+    currentScale = scale;
+    ui.zoomVal.value = Math.round(scale * 100) + '%';
+    wrapper.scrollTop = newScrollTop;
+
+    // === 後処理 ===
+    if (_zoomEndTimer) clearTimeout(_zoomEndTimer);
+    _zoomEndTimer = setTimeout(() => {
+      _zoomEndTimer = null;
       window.__viewer_isZooming = false;
-      isScaling = false;
-      if (pendingScale !== null) {
-        const nextScale = pendingScale;
-        pendingScale = null;
-        applyScaleToAllPages(nextScale);
-      } else {
-        // 操作が落ち着いたら高品質レンダリングフラグをクリア
-        if (highQualityRenderTimeout) clearTimeout(highQualityRenderTimeout);
-        highQualityRenderTimeout = setTimeout(() => {
-          metas.forEach(m => {
-            const { paper } = m;
-            if (paper && paper.getAttribute('data-needs-quality-render') === 'true') {
-              paper.removeAttribute('data-needs-quality-render');
-            }
-          });
-        }, 200);
-      }
-    });
+    }, 120);
   }
   
   let defaultValue;
@@ -168,7 +121,12 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     //console.log(defaultValue);
     return defaultValue;
   }
-  ui.wrapper.addEventListener('scroll', () => {defaultValue = calcPages();ui.pageInput.value = Math.round(defaultValue)+1;})
+  ui.wrapper.addEventListener('scroll', () => {
+    // ズーム中は強制レイアウトを避けるためスキップ
+    if (window.__viewer_isZooming) return;
+    defaultValue = calcPages();
+    ui.pageInput.value = Math.round(defaultValue)+1;
+  })
 
   
   

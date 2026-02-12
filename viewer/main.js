@@ -243,10 +243,14 @@ window.startViewer = async function startViewer(){
   }
   
   function updateVisiblePages() {
+    // ズーム中は getBoundingClientRect による強制レイアウトを回避
+    if (window.__viewer_isZooming) return;
     if (renderDebounceTimer) {
       clearTimeout(renderDebounceTimer);
     }
     renderDebounceTimer = setTimeout(async () => {
+      // デバウンス後にも再確認（タイマー中にズームが始まった場合）
+      if (window.__viewer_isZooming) return;
       const wrapper = ui.wrapper;
       const viewportTop = wrapper.scrollTop;
       const viewportBottom = viewportTop + wrapper.clientHeight;

@@ -124,17 +124,12 @@ window.setupShell = function setupShell(origContainer) {
 
   const wrapper = document.createElement('div');
   wrapper.id = 'viewer-container-wrapper';
-  // 横スクロール時に左端まで届かない問題を回避するため、
-  // 内部コンテナの幅を内容幅に合わせ、ラッパーはブロックで単純なスクロールにする
-  Object.assign(wrapper.style, { flex: '1 1 auto', overflow: 'auto', display: 'block', padding: '20px', background: '#282828' });
+  Object.assign(wrapper.style, { flex: '1 1 auto', overflowX: 'hidden', overflowY: 'auto', display: 'block', padding: '20px', background: '#282828' });
 
   const pagesHolder = document.createElement('div');
   pagesHolder.id = 'viewer-pages';
   pagesHolder.style.display = 'flex'; pagesHolder.style.flexDirection = 'column'; pagesHolder.style.gap = '3px'; pagesHolder.style.alignItems = 'center';
-  // コンテンツ幅に合わせて伸びるように（これにより左右どちらにもスクロール可能）
-  pagesHolder.style.width = 'max-content';
-  // ビューポートより狭いときは中央寄せ（広いときはスクロール可能のまま）
-  pagesHolder.style.margin = '0 auto';
+  pagesHolder.style.width = '100%';
 
   wrapper.appendChild(pagesHolder);
   shell.appendChild(toolbar); shell.appendChild(wrapper);
