@@ -83,11 +83,12 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
       baseH = wrapper.scrollHeight || 0;
     }
 
-    // DOM確定時に合わせる式: newScroll = (base * scale / 2) - (viewport / 2)
+    // 画面中央を起点としたズーム: ビューポート中心のコンテンツ座標を維持
     const cw = wrapper.clientWidth;
     const ch = wrapper.clientHeight;
-    const newScrollLeft = Math.max(0, Math.min(baseW * scale / 2 - cw / 2, maxScrollLeft));
-    const newScrollTop = Math.max(0, Math.min(baseH * scale / 2 - ch / 2, maxScrollTop));
+    const ratio = (oldScale > 0) ? (scale / oldScale) : 1;
+    const newScrollLeft = (oldScrollLeft + cw / 2) * ratio - cw / 2;
+    const newScrollTop = (oldScrollTop + ch / 2) * ratio - ch / 2;
     
     // 先読み: baseW/baseH と paper を収集（読み取りをまとめる）
     const metas = pages.map(pageDiv => {
@@ -97,10 +98,14 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
       return { pageDiv, baseW, baseH, paper };
     });
     
-    // 提案B: ズーム中は transform のみ更新（GPU合成レイヤで高速処理）
-    // pageDiv.style.width/height は触らない（レイアウト計算スキップ）
+    // transform + pageDiv サイズを同時に一括書き込み（DOMリフロー1回で完結）
+    // サイズを同期的に更新しないと scrollWidth/scrollHeight が旧値のままとなり、
+    // スクロール位置がクランプされてページがガクガク動く原因になる。
     metas.forEach(m => {
-      const { paper } = m;
+      const { pageDiv, baseW, baseH, paper } = m;
+      // コンテナサイズを先に更新（スクロール範囲を正しくする）
+      pageDiv.style.width = (baseW * scale) + 'px';
+      pageDiv.style.height = (baseH * scale) + 'px';
       if (paper) {
         paper.style.transform = `scale(${scale})`;
         paper.style.transformOrigin = '0 0';
@@ -113,66 +118,33 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     currentScale = scale; 
     ui.zoomVal.value = Math.round(scale * 100) + '%';
 
-    // スクロール位置を即座に適用（transform のスケールを考慮）
-    // 安定化のため、ズーム中は横方向を左揃えにする
+    // スクロール位置を即座に適用（DOMサイズ更新済みなのでクランプが正しく機能する）
     if (wrapper && oldScale > 0) {
-      // 横は左揃え
-      wrapper.scrollLeft = 0;
-      // 縦は新しいトップ位置を適用
+      wrapper.scrollLeft = Math.max(0, newScrollLeft);
       wrapper.scrollTop = Math.max(0, newScrollTop);
-      
-      // レイアウト確定後に微調整と次の処理
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          try {
-            // 横は左揃えを維持
-            wrapper.scrollLeft = 0;
-            // 縦のみ適切にクランプ
-            const visualMaxScrollTop = Math.max(0, wrapper.scrollHeight * (currentScale / oldScale) - wrapper.clientHeight);
-            wrapper.scrollTop = Math.max(0, Math.min(newScrollTop, visualMaxScrollTop));
-          } catch(e) {
-            console.warn('Scroll position adjustment failed:', e);
-          }
-          
-          // 処理完了、ズーム中フラグを解除
-          window.__viewer_isZooming = false;
-          isScaling = false;
-          if (pendingScale !== null) {
-            const nextScale = pendingScale;
-            pendingScale = null;
-            applyScaleToAllPages(nextScale);
-          } else {
-            // 操作が落ち着いたら（debounce）実レイアウトを書き込む
-            if (highQualityRenderTimeout) clearTimeout(highQualityRenderTimeout);
-            highQualityRenderTimeout = setTimeout(() => {
-              // 一括書き込みは RAF 内で行う
-              requestAnimationFrame(() => {
-                try {
-                  // 実際のレイアウトサイズを書き込む（これで DOM リフロー）
-                  metas.forEach(m => {
-                    const { pageDiv, baseW, baseH, paper } = m;
-                    pageDiv.style.width = (baseW * currentScale) + 'px';
-                    pageDiv.style.height = (baseH * currentScale) + 'px';
-                    if (paper && paper.getAttribute('data-needs-quality-render') === 'true') {
-                      paper.removeAttribute('data-needs-quality-render');
-                      // ここで必要ならCanvasの再レンダリング等を行う（noopで保留）
-                    }
-                  });
-                } catch (e) { console.warn('Batch layout update failed', e); }
-              });
-            }, 200); // 200ms デバウンスで実行
-          }
-        });
-      });
-    } else {
+    }
+
+    // 次フレームで isScaling を解除し、保留中のスケール処理を実行
+    requestAnimationFrame(() => {
       window.__viewer_isZooming = false;
       isScaling = false;
       if (pendingScale !== null) {
         const nextScale = pendingScale;
         pendingScale = null;
         applyScaleToAllPages(nextScale);
+      } else {
+        // 操作が落ち着いたら高品質レンダリングフラグをクリア
+        if (highQualityRenderTimeout) clearTimeout(highQualityRenderTimeout);
+        highQualityRenderTimeout = setTimeout(() => {
+          metas.forEach(m => {
+            const { paper } = m;
+            if (paper && paper.getAttribute('data-needs-quality-render') === 'true') {
+              paper.removeAttribute('data-needs-quality-render');
+            }
+          });
+        }, 200);
       }
-    }
+    });
   }
   
   let defaultValue;
