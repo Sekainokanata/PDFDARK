@@ -77,7 +77,7 @@ window.startViewer = async function startViewer(){
         } 
         catch(_) {}
 
-        const K = 0.001; // 感度係数（小さく→低感度/大きく→高感度）
+        const K = 0.005; // 感度係数（小さく→低感度/大きく→高感度）
         const factor = Math.exp(-e.deltaY * K);
         const next = Math.min(5, Math.max(0.1, current * factor));
 

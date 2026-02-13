@@ -333,8 +333,8 @@ input::-webkit-inner-spin-button {
     background-color: #800080;
 }
 
-/* ズーム中に現在ページの前後2ページ以外を非表示にする */
-.page.zoom-hidden {
-    opacity: 0;
+/* ズーム中に現在ページの前後1ージ以外を非表示にする */
+.page.zoom-hidden .paper > svg {
+    display: none;
     pointer-events: none;
 }
