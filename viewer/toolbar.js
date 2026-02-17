@@ -49,9 +49,9 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     
     // 各ページに対して表示/非表示を切り替え
     pages.forEach((page, index) => {
-      // 現在のページの前後2ページ以内かチェック
+      // 現在のページの前後1ページ以内かチェック
       const distance = Math.abs(index - currentIndex);
-      if (distance <= 2) {
+      if (distance <= 1) {
         page.classList.remove('zoom-hidden');
       } else {
         page.classList.add('zoom-hidden');
