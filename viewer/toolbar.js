@@ -92,13 +92,19 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
 
     // === Read phase ===
     const oldScrollTop = wrapper.scrollTop;
+    const oldScrollLeft = wrapper.scrollLeft;
     const oldScale = currentScale;
     const ch = wrapper.clientHeight;
+    const cw = wrapper.clientWidth;
     const baseH = pagesHolder.scrollHeight;
+    // 横スクロール用: 実際のページコンテンツ幅を取得
+    const firstPage = pagesHolder.querySelector('.page');
+    const pageBaseWidth = firstPage ? parseFloat(firstPage.getAttribute('data-base-width') || '0') : 0;
 
     // === Compute phase ===
     const ratio = (oldScale > 0) ? (scale / oldScale) : 1;
     const newScrollTop = Math.max(0, (oldScrollTop + ch / 2) * ratio - ch / 2);
+    const newScrollLeft = Math.max(0, (oldScrollLeft + cw / 2) * ratio - cw / 2);
 
     // === Write phase ===
     // transform: scale() はレイアウトをトリガしない（GPU合成のみ）
@@ -128,9 +134,22 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
       spacer.style.height = Math.max(0, baseH * (scale - 1)) + 'px';
     }
 
+    // 横スクロール: ページコンテンツがビューポートを超える場合にマージンを追加
+    const contentVisualWidth = pageBaseWidth * scale;
+    const viewportWidth = cw - 40; // wrapper の padding(左右20px)を除いた幅
+    if (pageBaseWidth > 0 && contentVisualWidth > viewportWidth) {
+      const extraHalf = (contentVisualWidth - viewportWidth) / 2;
+      pagesHolder.style.marginLeft = extraHalf + 'px';
+      pagesHolder.style.marginRight = extraHalf + 'px';
+    } else {
+      pagesHolder.style.marginLeft = '0px';
+      pagesHolder.style.marginRight = '0px';
+    }
+
     currentScale = scale;
     ui.zoomVal.value = Math.round(scale * 100) + '%';
     wrapper.scrollTop = newScrollTop;
+    wrapper.scrollLeft = newScrollLeft;
 
     // ズーム中は現在ページの前後2ページ以外を非表示にする
     updatePageVisibilityDuringZoom();

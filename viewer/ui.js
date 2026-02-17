@@ -124,7 +124,7 @@ window.setupShell = function setupShell(origContainer) {
 
   const wrapper = document.createElement('div');
   wrapper.id = 'viewer-container-wrapper';
-  Object.assign(wrapper.style, { flex: '1 1 auto', overflowX: 'hidden', overflowY: 'auto', display: 'block', padding: '20px', background: '#282828' });
+  Object.assign(wrapper.style, { flex: '1 1 auto', overflowX: 'auto', overflowY: 'auto', display: 'block', padding: '20px', background: '#282828' });
 
   const pagesHolder = document.createElement('div');
   pagesHolder.id = 'viewer-pages';

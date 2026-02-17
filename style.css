@@ -62,8 +62,8 @@ html, body {
     justify-content: center;
     align-items: flex-start;
     padding: 20px;
-    /* タッチ端末でのピンチズーム抑止、縦スクロールのみ許可 */
-    touch-action: pan-y;
+    /* 縦・横スクロールの両方を許可 */
+    touch-action: pan-x pan-y;
 }
 
 /* the page stack area */
@@ -331,6 +331,31 @@ input::-webkit-inner-spin-button {
 
 .highlightSample.purple{
     background-color: #800080;
+}
+
+/* スクロールバー（WebKit系: Chrome, Edge） */
+#viewer-container-wrapper::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+#viewer-container-wrapper::-webkit-scrollbar-track {
+    background: #2b2b2b;
+}
+#viewer-container-wrapper::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 5px;
+    border: 2px solid #2b2b2b;
+}
+#viewer-container-wrapper::-webkit-scrollbar-thumb:hover {
+    background: #777;
+}
+#viewer-container-wrapper::-webkit-scrollbar-corner {
+    background: #2b2b2b;
+}
+/* スクロールバー（Firefox） */
+#viewer-container-wrapper {
+    scrollbar-width: thin;
+    scrollbar-color: #555 #2b2b2b;
 }
 
 /* ズーム中に現在ページの前後2ページ以外を非表示にする */
