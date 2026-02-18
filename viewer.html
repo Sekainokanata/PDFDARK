@@ -17,13 +17,21 @@
 
   <!-- OpenCV.js はサンドボックス iframe 側で読み込みます（拡張ページでは読み込まない） -->
 
-  <!-- 2) 分割した viewer スクリプト群 -->
-  <script src="viewer/scroll.js"></script>
-  <script src="viewer/ui.js"></script>
-  <!-- <script src="viewer/detect_python_style.js"></script> -->
-  <script src="viewer/renderer.js"></script>
-  <script src="viewer/toolbar.js"></script>
-  <script src="viewer/main.js"></script>
+  <!-- 2) 分割した viewer スクリプト群（依存順に読み込み） -->
+  <script src="viewer/scroll.js"></script>          <!-- スクロールユーティリティ -->
+  <script src="viewer/shell.js"></script>           <!-- DOM 構築（setupShell） -->
+  <script src="viewer/download.js"></script>        <!-- ダウンロード処理 -->
+  <script src="viewer/copy-control.js"></script>    <!-- コピー権限制御 -->
+  <script src="viewer/svg-invert.js"></script>      <!-- SVG 色反転 -->
+  <script src="viewer/text-layer.js"></script>      <!-- テキストレイヤ生成 -->
+  <script src="viewer/image-process.js"></script>   <!-- 画像処理・写真領域検出 -->
+  <script src="viewer/darkmode.js"></script>        <!-- ダークモード状態・適用 -->
+  <script src="viewer/highlight.js"></script>       <!-- ハイライト色変換 -->
+  <script src="viewer/zoom.js"></script>            <!-- ズーム制御 -->
+  <script src="viewer/text-mode.js"></script>       <!-- テキスト表示モード切替 -->
+  <script src="viewer/page-render.js"></script>     <!-- 個別ページレンダリング -->
+  <script src="viewer/toolbar.js"></script>         <!-- ツールバー統括・ページナビ -->
+  <script src="viewer/main.js"></script>            <!-- エントリーポイント（startViewer） -->
 
   <!-- 3) viewer-run.js: workerSrc 設定 & startViewer 実行（従来通り） -->
   <script src="viewer-run.js"></script>

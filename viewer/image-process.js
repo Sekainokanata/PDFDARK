@@ -1,211 +1,6 @@
-// renderer.js
-// PDF のロード、ページ描画、オーバーレイ生成、画像反転など
-
-// グローバル関数に依存（viewer が従来の <script> 羅列方式のため）
-
-window.detectCopyPermission = async function detectCopyPermission(pdfDoc) {
-  // 方針: 明確に COPY 権限が検出できた場合のみ true。それ以外（null/取得失敗/未知形式）は false とする（保守的）。
-  try {
-    const perms = await pdfDoc.getPermissions();
-    const Flag = (typeof pdfjsLib !== 'undefined' && pdfjsLib.PermissionFlag) ? pdfjsLib.PermissionFlag : {};
-    const COPY_FLAG = (Flag && typeof Flag.COPY === 'number') ? Flag.COPY : 16; // PDF.js 既定値のフォールバック
-
-    if (Array.isArray(perms)) {
-      // 数値フラグの配列を想定
-      const nums = perms.filter(v => typeof v === 'number');
-      if (nums.length > 0) {
-        const canCopy = nums.includes(COPY_FLAG);
-        return { canCopy, rawPerms: perms };
-      }
-      // 文字列等のフォーマットは非対応 → 保守的に false
-      return { canCopy: false, rawPerms: perms };
-    }
-
-    // perms === null（非暗号 or 取得不能）でも true にしない。誤検出を避けるため保守的に false。
-    return { canCopy: false, rawPerms: perms };
-  } catch (e) {
-    console.warn('detectCopyPermission failed; returning canCopy=false', e);
-    return { canCopy: false, rawPerms: null, error: e?.message };
-  }
-};
-
-window.installCopyBlockers = function installCopyBlockers(rootEl) {
-  rootEl.style.userSelect = 'none'; rootEl.style.webkitUserSelect = 'none'; rootEl.style.MozUserSelect = 'none';
-  function onCopy(e) { e.preventDefault(); try { e.clipboardData.setData('text/plain', ''); } catch (_) {} return false; }
-  document.addEventListener('copy', onCopy); document.addEventListener('cut', onCopy);
-  const onContext = (e) => e.preventDefault();
-  rootEl.addEventListener('contextmenu', onContext);
-  return () => {
-    document.removeEventListener('copy', onCopy); document.removeEventListener('cut', onCopy);
-    rootEl.removeEventListener('contextmenu', onContext);
-    rootEl.style.userSelect = ''; rootEl.style.webkitUserSelect = ''; rootEl.style.MozUserSelect = '';
-  };
-};
-
-// 色関連（必要最小限）
-window.pickForegroundForBackground = function pickForegroundForBackground(bgRgb) {
-  function srgbToLinearChannel(c) { const v = c / 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
-  function relativeLuminance(rgb) { const R = srgbToLinearChannel(rgb.r), G = srgbToLinearChannel(rgb.g), B = srgbToLinearChannel(rgb.b); return 0.2126 * R + 0.7152 * G + 0.0722 * B; }
-  const lum = relativeLuminance(bgRgb);
-  return lum > 0.5 ? 'rgba(30, 30, 30, 1)' : 'rgba(224, 224, 224, 1)';
-};
-
-// 既存のスマート反転（簡略化しつつコピペ）。ここでは svg 内の文字など非彩色要素を黒背景に映える色へ置換
-window.invertSvgColorsSmart = function invertSvgColorsSmart(svg, options = {}) {
-  function parseColor(str) {
-    if (!str) return null; str = String(str).trim().toLowerCase(); if (str === 'none') return null;
-    const hexMatch = str.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
-    if (hexMatch) { let hex = hexMatch[1]; if (hex.length === 3) hex = hex.split('').map(c => c + c).join(''); const num = parseInt(hex, 16); return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255, a: 1 }; }
-    const rgbMatch = str.match(/^rgba?\(([^)]+)\)$/);
-    if (rgbMatch) { const parts = rgbMatch[1].split(',').map(s => s.trim()); const r = parseFloat(parts[0]), g = parseFloat(parts[1]), b = parseFloat(parts[2]); const a = parts[3] !== undefined ? parseFloat(parts[3]) : 1; return { r, g, b, a }; }
-    const kw = { black: { r: 30, g: 30, b: 30, a: 1 }, white: { r: 244, g: 244, b: 244, a: 1 }, gray: { r: 128, g: 128, b: 128, a: 1 }, grey: { r: 128, g: 128, b: 128, a: 1 } };
-    if (kw[str]) return kw[str]; return null;
-  }
-  function rgbToHsl(r, g, b) { r/=255; g/=255; b/=255; const max=Math.max(r,g,b), min=Math.min(r,g,b); let h=0,s=0,l=(max+min)/2; if(max!==min){ const d=max-min; s=l>0.5?d/(2-max-min):d/(max+min); switch(max){case r:h=(g-b)/d+(g<b?6:0);break;case g:h=(b-r)/d+2;break;case b:h=(r-g)/d+4;break;} h/=6;} return{h,s,l}; }
-  function isColored(rgb, options = {}) { if (!rgb) return false; const { s } = rgbToHsl(rgb.r, rgb.g, rgb.b); const satThreshold = options.satThreshold ?? 0.15; return s >= satThreshold; }
-
-  const gradientMap = new Map();
-  const gradients = svg.querySelectorAll('linearGradient, radialGradient');
-  gradients.forEach(g => { const id = g.id; if (!id) return; const stops = g.querySelectorAll('stop'); let colored = false; stops.forEach(stop => { const sc = stop.getAttribute('stop-color'); const parsed = parseColor(sc); if (parsed && isColored(parsed, options)) colored = true; }); gradientMap.set('#' + id, colored); });
-
-  const selector = 'text, tspan, path, rect, circle, ellipse, line, polyline, polygon, g';
-  //gを含めない構造も可能だが、そうすると子要素でいちいち反転する羽目になる為、パフォーマンス的に怪しい。ただし、親にもともとfillを持ってないPDFも普通にあるので、最終的に削除することも検討。
-  const nodes = svg.querySelectorAll(selector);
-  let textCount = 0, pathCount = 0, invertedCount = 0;
-  const tagStats = {};
-  nodes.forEach(el => {
-    const tag = el.tagName.toLowerCase();
-    const baseTag = tag.replace(/^svg:/, ''); // 名前空間を除去
-    tagStats[tag] = (tagStats[tag] || 0) + 1;
-    if (baseTag === 'text' || baseTag === 'tspan') textCount++;
-    if (baseTag === 'path') pathCount++;
-    if (baseTag === 'image') return;
-    let fillAttr = el.getAttribute('fill'); let fillIsGradient = false; if (fillAttr && fillAttr.trim().startsWith('url(')) fillIsGradient = true;
-    let fillColor = null;
-    if (!fillIsGradient) {
-      // まず属性と style から取得を試みる
-      if (fillAttr && fillAttr !== 'currentColor' && fillAttr !== 'none') fillColor = parseColor(fillAttr);
-      if (!fillColor && el.style && el.style.fill) fillColor = parseColor(el.style.fill);
-      
-      // fill属性がない場合（親から継承）はcomputedStyleを使うが、
-      // 親要素がすでに処理されている可能性があるため、親に fill 属性があるかチェック
-      if (!fillColor) { 
-        const cs = window.getComputedStyle(el); 
-        if (cs && cs.fill) {
-          // 親要素に fill 属性がある場合、親が既に処理済みなのでスキップ
-          let hasParentFill = false;
-          let parent = el.parentElement;
-          while (parent && parent.tagName.toLowerCase().replace(/^svg:/, '') !== 'svg') {
-            if (parent.getAttribute('fill')) {
-              hasParentFill = true;
-              break;
-            }
-            parent = parent.parentElement;
-          }
-          // 親に fill がない場合のみ computed を使用
-          if (!hasParentFill) {
-            fillColor = parseColor(cs.fill);
-          }
-        }
-      }
-    }
-    
-    // LaTeX PDF デバッグ: text/tspan要素で fill が取得できているか確認
-    if ((baseTag === 'text' || baseTag === 'tspan') && textCount <= 5) {
-      console.log('[DEBUG text]', baseTag, textCount, 'fillAttr:', fillAttr, 'style.fill:', el.style.fill, 'computed:', fillColor ? `rgb(${fillColor.r},${fillColor.g},${fillColor.b})` : 'null');
-    }
-    
-    let strokeAttr = el.getAttribute('stroke'); let strokeColor = null; if (strokeAttr && strokeAttr !== 'currentColor' && strokeAttr !== 'none') strokeColor = parseColor(strokeAttr);
-    if (!strokeColor && el.style && el.style.stroke) strokeColor = parseColor(el.style.stroke);
-    if (!strokeColor) { const cs = window.getComputedStyle(el); if (cs && cs.stroke) strokeColor = parseColor(cs.stroke); }
-
-    if (fillIsGradient) {
-      const urlRef = el.getAttribute('fill').trim(); const gradColored = gradientMap.has(urlRef) ? gradientMap.get(urlRef) : true;
-      if (!gradColored) {
-        const id = urlRef.replace(/^url\(/, '').replace(/\)$/, ''); const gradElem = svg.querySelector(id);
-        if (gradElem) gradElem.querySelectorAll('stop').forEach(stop => { const sc = stop.getAttribute('stop-color'); const parsed = parseColor(sc); if (parsed && !isColored(parsed, options)) {
-            if (!stop.hasAttribute('data-dm-original-stop-color')) {
-              const oc = stop.getAttribute('stop-color');
-              stop.setAttribute('data-dm-original-stop-color', oc !== null ? oc : '__dm__MISSING__');
-            }
-            stop.setAttribute('stop-color', window.pickForegroundForBackground(parsed));
-          } });
-      }
-    } else if (fillColor && !isColored(fillColor, options)) {
-      if (!el.hasAttribute('data-dm-original-fill')) {
-        const of = el.getAttribute('fill'); el.setAttribute('data-dm-original-fill', of !== null ? of : '__dm__MISSING__');
-      }
-      const newFill = window.pickForegroundForBackground(fillColor);
-      el.setAttribute('fill', newFill);
-      invertedCount++;
-      if (invertedCount <= 3) {
-        console.log('[INVERTED]', tag, 'from:', `rgb(${fillColor.r},${fillColor.g},${fillColor.b})`, 'to:', newFill);
-      }
-    }
-
-    if (strokeColor && !isColored(strokeColor, options)) {
-      if (!el.hasAttribute('data-dm-original-stroke')) {
-        const os = el.getAttribute('stroke'); el.setAttribute('data-dm-original-stroke', os !== null ? os : '__dm__MISSING__');
-      }
-      el.setAttribute('stroke', window.pickForegroundForBackground(strokeColor));
-      invertedCount++;
-    }
-  });
-  console.log('[invertSvgColorsSmart] text/tspan:', textCount, 'path:', pathCount, 'inverted:', invertedCount, 'tags:', tagStats);
-  if (!svg.hasAttribute('data-dm-original-background')) {
-    const bg = svg.style.background || '';
-    svg.setAttribute('data-dm-original-background', bg);
-  }
-  svg.style.background = '#1E1E1E';
-};
-
-
-// テキストレイヤ（paper内に配置）
-window.renderTextLayerFromTextContent = function renderTextLayerFromTextContent(textContent, viewport, pageDiv, options = {}) {
-  options = Object.assign({ forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#E0E0E0', zIndex: 3000, allowCopy: false }, options);
-  const paper = pageDiv.querySelector('.paper') || pageDiv; if (getComputedStyle(paper).position === 'static') paper.style.position = 'relative';
-  // 既存の textLayer があれば除去（重複生成を防止）
-  try { const existing = paper.querySelector('.textLayer'); if (existing) existing.remove(); } catch(_) {}
-  const textLayer = document.createElement('div'); textLayer.className = 'textLayer';
-  Object.assign(textLayer.style, { position: 'absolute', left: '0', top: '0', width: paper.style.width || pageDiv.style.width || (pageDiv.getAttribute('data-base-width') + 'px'), height: paper.style.height || pageDiv.style.height || (pageDiv.getAttribute('data-base-height') + 'px'), pointerEvents: options.allowCopy ? 'auto' : 'none', overflow: 'visible', zIndex: String(options.zIndex), background: 'transparent', mixBlendMode: 'normal', transformOrigin: '0 0' });
-  paper.appendChild(textLayer);
-
-  function multiplyTransform(a,b){ return [ a[0]*b[0] + a[1]*b[2], a[0]*b[1] + a[1]*b[3], a[2]*b[0] + a[3]*b[2], a[2]*b[1] + a[3]*b[3], a[4]*b[0] + a[5]*b[2] + b[4], a[4]*b[1] + a[5]*b[3] + b[5] ]; }
-  const vtm = viewport.transform;
-  textContent.items.forEach(item => {
-    let tx; try { if (window.pdfjsLib && pdfjsLib.Util && typeof pdfjsLib.Util.transform === 'function') tx = pdfjsLib.Util.transform(viewport.transform, item.transform); else tx = multiplyTransform(vtm, item.transform || [1,0,0,1,0,0]); } catch(e) { tx = multiplyTransform(vtm, item.transform || [1,0,0,1,0,0]); }
-    const left = tx[4]; const top = tx[5]; const fontHeight = Math.hypot(tx[1], tx[3]) || (item.height || 12);
-    const span = document.createElement('span'); span.textContent = item.str;
-    Object.assign(span.style, { position: 'absolute', left: `${left}px`, top: `${top - fontHeight}px`, fontSize: `${fontHeight}px`, whiteSpace: 'pre', lineHeight: '1', transformOrigin: '0 0', pointerEvents: options.allowCopy ? 'auto' : 'none', userSelect: options.allowCopy ? 'text' : 'none', WebkitUserSelect: options.allowCopy ? 'text' : 'none', MozUserSelect: options.allowCopy ? 'text' : 'none', msUserSelect: options.allowCopy ? 'text' : 'none', color: options.color, WebkitTextFillColor: options.color });
-    textLayer.appendChild(span);
-  });
-
-  const svgElem = pageDiv.querySelector('svg');
-  const hasSvgText = !!svgElem && !!svgElem.querySelector('text, tspan');
-  const shouldBeVisible = options.forceVisible || (!hasSvgText) || !options.makeTransparentIfSvgTextExists;
-  textLayer.querySelectorAll('span').forEach(s => {
-    if (shouldBeVisible) {
-      // 表示モード: 色を設定（allowCopy は選択可否のみを制御）
-      s.style.color = options.color; s.style.WebkitTextFillColor = options.color;
-      s.style.pointerEvents = options.allowCopy ? 'auto' : 'none';
-      s.style.userSelect = options.allowCopy ? 'text' : 'none';
-      s.style.WebkitUserSelect = options.allowCopy ? 'text' : 'none';
-      s.style.MozUserSelect = options.allowCopy ? 'text' : 'none';
-      s.style.msUserSelect = options.allowCopy ? 'text' : 'none';
-      s.removeAttribute('aria-hidden');
-    } else {
-      // 非表示モード: 透明（allowCopy 問わず選択不可）
-      s.style.color = 'transparent'; s.style.WebkitTextFillColor = 'transparent';
-      s.style.pointerEvents = 'none';
-      s.style.userSelect = 'none';
-      s.style.WebkitUserSelect = 'none';
-      s.style.MozUserSelect = 'none';
-      s.style.msUserSelect = 'none';
-      s.setAttribute('aria-hidden', 'true');
-    }
-  });
-  return textLayer;
-};
+// image-process.js
+// 画像処理: SVG内画像の反転、写真領域検出（クラシック/Python式）、
+// OpenCV/MLサンドボックス連携、PNG変換
 
 // 画像反転（高品質）
 window.objectUrlMap = window.objectUrlMap || new Map();
@@ -531,7 +326,7 @@ window.detectPhotoRegionsClassic = function detectPhotoRegionsClassic(imgDataSma
     }
     const refined = merged.map(refineOneBox);
 
-    // 7) 安全な外側拡張（小画像空間の境界スキャンで“写真っぽさ”を保ちながら数pxだけ広げる）
+    // 7) 安全な外側拡張（小画像空間の境界スキャンで"写真っぽさ"を保ちながら数pxだけ広げる）
     function expandOneBox(b){
       // オリジナル座標 → 小画像座標
       let sx0 = Math.max(0, Math.floor(b.x / scaleX)), sy0 = Math.max(0, Math.floor(b.y / scaleY));
@@ -630,6 +425,10 @@ window.detectPhotoRegionsClassic = function detectPhotoRegionsClassic(imgDataSma
     return { ok:false, boxes:[], error:String(e&&e.message||e) };
   }
 };
+
+// ===============================
+// OpenCV サンドボックス連携
+// ===============================
 
 // OpenCV.js 読み込み待機（すでに読み込まれていれば即解決）
 // OpenCV を sandbox で実行
@@ -1033,6 +832,10 @@ window.detectPhotoRegionsPythonStyle = function detectPhotoRegionsPythonStyle(im
   }
 };
 
+// ===============================
+// ML サンドボックス（旧: 互換のため残す）
+// ===============================
+
 // サンドボックスの用意（単一 iframe を使いまわし）
 // 旧: ML サンドボックス。互換のため残すが未使用。
 window.__ensureMlSandboxReady = async function __ensureMlSandboxReady(){
@@ -1094,6 +897,10 @@ window.__predictInSandbox = async function __predictInSandbox(imageData, width, 
   sb.queue = sb.queue.then(() => run());
   return sb.queue;
 };
+
+// ===============================
+// PNG変換: PDF.js ページを Canvas に描画して写真領域検出 → 反転除外 → Canvas を paper に配置
+// ===============================
 
 // PDF.js ページを Canvas に描画して ML 反転（ボックス外）を適用し、paper に配置
 window.convertPageToPng = async function convertPageToPng(page, viewport, paper){
@@ -1294,148 +1101,4 @@ window.convertPageToPng = async function convertPageToPng(page, viewport, paper)
   try { console.log('クラシック検出の反転(ボックス外)を適用しました'); } catch(_) {}
   try { canvas.__originalImageData = imgData; canvas.__darkProcessed = true; } catch(_) {}
   return canvas;
-};
-
-// ===== 既存ページに対するダークモード再適用/解除ヘルパ =====
-// enabled=true なら再反転処理（まだ処理していない PNG Canvas を selective invert）
-// enabled=false なら保存済みオリジナルへ復元（SVG は restore、PNG は original ImageData）
-window.__viewer_applyDarkMode = async function __viewer_applyDarkMode(enabled){
-  try {
-    const holder = (window.__viewer_ui && window.__viewer_ui.pagesHolder) || document.getElementById('viewer-pages');
-    if (!holder) return;
-    const pages = holder.querySelectorAll('.page');
-    
-    // 現在のモード（overlay/svg）を取得
-    let currentMode = 'svg';
-    try { currentMode = localStorage.getItem('viewerTextMode') || 'svg'; } catch(_) {}
-    
-    pages.forEach(pageDiv => {
-      const paper = pageDiv.querySelector('.paper');
-      if (!paper) return;
-      const svg = paper.querySelector('svg');
-      const canvases = paper.querySelectorAll('canvas');
-      const textLayer = pageDiv.querySelector('.textLayer');
-      const hasShadingError = pageDiv.hasAttribute('data-shading-error');
-      
-      // オーバーレイモードまたはShadingエラーページの場合、テキストレイヤーの色を更新
-      if ((currentMode === 'overlay' || hasShadingError) && textLayer) {
-        const overlayColor = enabled ? '#e0e0e0' : '#222222';
-        textLayer.querySelectorAll('span').forEach(s => {
-          //const currentColor = s.style.getComputedStyle('color');
-          //const [r, g, b] = currentColor.match(/\d+/g).map(Number);
-          s.style.setProperty('color', overlayColor, 'important');
-          s.style.setProperty('-webkit-text-fill-color', overlayColor, 'important');
-          /*この部分を変更することで色変更が可能に
-          if (Math.abs(r-g) <= 3 && Math.abs(g-b) <= 3 && Math.abs(b-r) <= 3) {
-              s.style.setProperty('color', overlayColor, 'important');
-              s.style.setProperty('-webkit-text-fill-color', overlayColor, 'important');
-          }*/
-        });
-      }
-      
-      if (enabled) {
-        // ON: SVG にスマート反転（背景黒化）を再適用。既存で処理済みならスキップ。
-        if (svg && !svg.__darkApplied) {
-          try { window.invertSvgColorsSmart(svg, { satThreshold: 0.15 }); svg.__darkApplied = true; } catch(_) {}
-          try { window.processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 }); } catch(_) {}
-        }
-        // PNG Canvas: 未処理なら再描画せずその場で selective invert
-        canvases.forEach(cv => { (async () => {
-          if (cv.__darkProcessed) return; // 既に暗転済み
-          let imgData = cv.__originalImageData;
-          try {
-            const ctx2 = cv.getContext('2d');
-            if (!imgData) { imgData = ctx2.getImageData(0, 0, cv.width, cv.height); cv.__originalImageData = imgData; }
-            // 縮小して検出
-            let imgSmall = imgData; let sw = imgData.width, sh = imgData.height; const maxSide = 1024; const scale = Math.min(1, maxSide / Math.max(sw, sh));
-            if (scale < 1) {
-              const sW = Math.max(1, Math.round(sw * scale)); const sH = Math.max(1, Math.round(sh * scale));
-              const tmp = document.createElement('canvas'); tmp.width = sW; tmp.height = sH; const tctx = tmp.getContext('2d');
-              const src = document.createElement('canvas'); src.width = sw; src.height = sh; const sctx = src.getContext('2d'); sctx.putImageData(imgData, 0, 0);
-              tctx.imageSmoothingEnabled = true; tctx.imageSmoothingQuality = 'high'; tctx.drawImage(src, 0, 0, sW, sH);
-              imgSmall = tctx.getImageData(0, 0, sW, sH);
-              sw = sW; sh = sH;
-            }
-            // OpenCV sandbox 優先 → フォールバック: ピュアJS
-            let det = null;
-            try { det = null; const cvRes = await window.__opencvDetectInSandbox(imgSmall, imgData.width, imgData.height, {}); if (cvRes && cvRes.ok) det = cvRes; } catch(_) {}
-            if (!det || !det.ok) det = window.detectPhotoRegionsPythonStyle(imgSmall, imgData.width, imgData.height);
-            // 反転（ボックス外のみ）
-            const boxesPx = Array.isArray(det.boxes) ? det.boxes : (det.box ? [det.box] : []);
-            const data = new Uint8ClampedArray(imgData.data);
-            // まず全体を反転
-            for (let i=0;i<data.length;i+=4){ data[i]=30+(255-data[i])*214/255; data[i+1]=30+(255-data[i+1])*214/255; data[i+2]=30+(255-data[i+2])*214/255; }
-            if (boxesPx.length) {
-              const W = imgData.width, H = imgData.height;
-              for (const b of boxesPx) {
-                if (!b) continue; const x=Math.max(0,Math.min(W,Math.round(b.x))), y=Math.max(0,Math.min(H,Math.round(b.y)));
-                const bw=Math.max(0,Math.min(W-x,Math.round(b.w))), bh=Math.max(0,Math.min(H-y,Math.round(b.h))); if (!(bw>0 && bh>0)) continue;
-                for (let row=0; row<bh; row++){
-                  const start=((y+row)*W + x)*4; const len=bw*4; data.set(imgData.data.subarray(start, start+len), start);
-                }
-              }
-            }
-            const out = new ImageData(data, imgData.width, imgData.height); ctx2.putImageData(out, 0, 0); cv.__darkProcessed = true;
-          } catch(_){ }
-        })(); });
-      } else {
-        // OFF: SVG を可能なら元の色へ戻す（背景も）
-        if (svg) {
-          try {
-            // 背景を初期化（dark適用時に #1E1E1E を設定、元の背景は data-dm-original-background）
-            const bg = svg.getAttribute('data-dm-original-background');
-            if (bg !== null) {
-              if (bg === '') svg.style.background = ''; else svg.style.background = bg;
-              svg.removeAttribute('data-dm-original-background');
-            } else {
-              svg.style.background = '';
-            }
-            // 塗り/線の復元（ダークモード専用のバックアップ属性から）
-            svg.querySelectorAll('[data-dm-original-fill]').forEach(el => {
-              const of = el.getAttribute('data-dm-original-fill');
-              if (of === null || of === '' || of === '__dm__MISSING__') el.removeAttribute('fill'); else el.setAttribute('fill', of);
-              el.removeAttribute('data-dm-original-fill');
-            });
-            svg.querySelectorAll('[data-dm-original-stroke]').forEach(el => {
-              const os = el.getAttribute('data-dm-original-stroke');
-              if (os === null || os === '' || os === '__dm__MISSING__') el.removeAttribute('stroke'); else el.setAttribute('stroke', os);
-              el.removeAttribute('data-dm-original-stroke');
-            });
-            // グラデーション stop の復元
-            svg.querySelectorAll('stop[data-dm-original-stop-color]').forEach(stop => {
-              const oc = stop.getAttribute('data-dm-original-stop-color');
-              if (oc === null || oc === '__dm__MISSING__') stop.removeAttribute('stop-color'); else stop.setAttribute('stop-color', oc);
-              stop.removeAttribute('data-dm-original-stop-color');
-            });
-            // 画像の復元（href/フィルタ）
-            svg.querySelectorAll('image').forEach(imgEl => {
-              try {
-                const orig = imgEl.getAttribute('data-dm-original-href');
-                if (orig !== null) {
-                  // 置換に使用した blob を解放
-                  const m = window.objectUrlMap && window.objectUrlMap.get(imgEl);
-                  if (m && m.url && m.url.startsWith('blob:')) { try { URL.revokeObjectURL(m.url); } catch(_){} }
-                  if (window.objectUrlMap) window.objectUrlMap.delete(imgEl);
-                  imgEl.setAttribute('href', orig);
-                  imgEl.setAttributeNS('http://www.w3.org/1999/xlink', 'href', orig);
-                  imgEl.removeAttribute('data-dm-original-href');
-                }
-                if (imgEl.getAttribute('data-dm-image-inverted') === '1') {
-                  imgEl.style.filter = '';
-                  imgEl.removeAttribute('data-dm-image-inverted');
-                }
-              } catch(_){ }
-            });
-            svg.__darkApplied = false;
-          } catch(_) {}
-        }
-        // PNG Canvas: 保存してあるオリジナル ImageData へ復元
-        canvases.forEach(cv => {
-          if (!cv.__darkProcessed) return; // そもそも暗転されていない
-          const orig = cv.__originalImageData; if (!orig) return;
-          try { const ctx2 = cv.getContext('2d'); ctx2.putImageData(orig, 0, 0); cv.__darkProcessed = false; } catch(_) {}
-        });
-      }
-    });
-  } catch(e){ console.warn('__viewer_applyDarkMode failed', e); }
 };
