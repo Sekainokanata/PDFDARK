@@ -68,9 +68,6 @@ window.wireZoomControls = function wireZoomControls(ui){
     const ch = wrapper.clientHeight;
     const cw = wrapper.clientWidth;
     const baseH = pagesHolder.scrollHeight;
-    // 横スクロール用: 実際のページコンテンツ幅を取得
-    const firstPage = pagesHolder.querySelector('.page');
-    const pageBaseWidth = firstPage ? parseFloat(firstPage.getAttribute('data-base-width') || '0') : 0;
 
     // === Compute phase ===
     const ratio = (oldScale > 0) ? (scale / oldScale) : 1;
@@ -105,14 +102,28 @@ window.wireZoomControls = function wireZoomControls(ui){
       spacer.style.height = Math.max(0, baseH * (scale - 1)) + 'px';
     }
 
-    // 横スクロール: ページコンテンツがビューポートを超える場合にマージンを追加
-    const contentVisualWidth = pageBaseWidth * scale;
-    const viewportWidth = cw - 40; // wrapper の padding(左右20px)を除いた幅
-    if (pageBaseWidth > 0 && contentVisualWidth > viewportWidth) {
-      const extraHalf = (contentVisualWidth - viewportWidth) / 2;
-      pagesHolder.style.marginLeft = extraHalf + 'px';
-      pagesHolder.style.marginRight = extraHalf + 'px';
+    // 横スクロール: Chrome標準PDFビューアのように、最小限のマージンで横スクロール範囲を制限
+    // pagesHolder の実際のレイアウト幅（ページ幅に基づく）を使用し、
+    // wrapper のパディング（20px）のみが端のマージンとして機能する
+    if (scale > 1) {
+      const phActualWidth = pagesHolder.offsetWidth; // 実際のコンテンツ幅（transformの影響を受けない）
+      const scaledWidth = phActualWidth * scale;
+
+      if (scaledWidth + 40 > cw) {
+        // スケール後のコンテンツがビューポートを超える → 横スクロール有効化
+        // justify-content: center はオーバーフロー時に左側がクリップされるため flex-start に切替
+        wrapper.style.justifyContent = 'flex-start';
+        const halfOverflow = phActualWidth * (scale - 1) / 2;
+        pagesHolder.style.marginLeft = halfOverflow + 'px';
+        pagesHolder.style.marginRight = halfOverflow + 'px';
+      } else {
+        // スケール後もビューポートに収まる → 中央揃えを維持
+        wrapper.style.justifyContent = 'center';
+        pagesHolder.style.marginLeft = '0px';
+        pagesHolder.style.marginRight = '0px';
+      }
     } else {
+      wrapper.style.justifyContent = 'center';
       pagesHolder.style.marginLeft = '0px';
       pagesHolder.style.marginRight = '0px';
     }
