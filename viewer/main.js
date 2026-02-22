@@ -77,7 +77,13 @@ window.startViewer = async function startViewer(){
         } 
         catch(_) {}
 
-        const K = 0.002; // 感度係数（小さく→低感度/大きく→高感度）
+        // マウスホイールとトラックパッドで感度を分離
+        // トラックパッド(ピンチ): deltaMode===0 かつ deltaY が小さい連続値
+        // マウスホイール: deltaMode===1 または deltaY の絶対値が大きい離散値
+        const isTrackpad = (e.deltaMode === 0 && Math.abs(e.deltaY) < 50);
+        const K_MOUSE    = 0.002; // マウスホイール用感度（従来値）
+        const K_TRACKPAD = 0.008; // トラックパッド用感度
+        const K = isTrackpad ? K_TRACKPAD : K_MOUSE;
         const factor = Math.exp(-e.deltaY * K);
         const next = Math.min(5, Math.max(0.1, current * factor));
 
