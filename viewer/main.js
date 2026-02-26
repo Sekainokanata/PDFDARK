@@ -77,7 +77,13 @@ window.startViewer = async function startViewer(){
         } 
         catch(_) {}
 
-        const K = 0.006; // 感度係数（小さく→低感度/大きく→高感度）
+        // マウスホイールとトラックパッドで感度を分離
+        // トラックパッド(ピンチ): deltaMode===0 かつ deltaY が小さい連続値
+        // マウスホイール: deltaMode===1 または deltaY の絶対値が大きい離散値
+        const isTrackpad = (e.deltaMode === 0 && Math.abs(e.deltaY) < 50);
+        const K_MOUSE    = 0.002; // マウスホイール用感度（従来値）
+        const K_TRACKPAD = 0.008; // トラックパッド用感度
+        const K = isTrackpad ? K_TRACKPAD : K_MOUSE;
         const factor = Math.exp(-e.deltaY * K);
         const next = Math.min(5, Math.max(0.1, current * factor));
 
@@ -139,7 +145,7 @@ window.startViewer = async function startViewer(){
   const shouldApplyDarkModeInitially = window.__viewer_darkModeEnabled;
 
   // メモリ削減: 初期表示は最初の3ページのみレンダリング，残りは10ページずつレンダリング
-  const INITIAL_RENDER_PAGES = 10;
+  const INITIAL_RENDER_PAGES = 3;
   const RENDER_PAGES = 10;
   
   // ページメタデータを保持（遅延レンダリング用）
@@ -156,24 +162,12 @@ window.startViewer = async function startViewer(){
     pageDiv.setAttribute('data-base-width', viewport.width);
     pageDiv.setAttribute('data-base-height', viewport.height);
     pageDiv.setAttribute('data-placeholder', 'true');
-    pageDiv.style.width = viewport.width + 'px';
-    pageDiv.style.height = viewport.height + 'px';
-    pageDiv.style.transformOrigin = '0 0';
-    pageDiv.style.overflow = 'visible';
-    pageDiv.style.display = 'block';
-    pageDiv.style.position = 'relative';
-    pageDiv.style.background = '#f0f0f0';
+    // cssTextで一括設定（個別style代入による複数Reflow回避）
+    pageDiv.style.cssText = `width:${viewport.width}px;height:${viewport.height}px;transform-origin:0 0;overflow:visible;display:block;position:relative;background:#f0f0f0`;
     
     const paper = document.createElement('div');
     paper.className = 'paper';
-    paper.style.width = viewport.width + 'px';
-    paper.style.height = viewport.height + 'px';
-    paper.style.transformOrigin = '0 0';
-    paper.style.background = '#fff';
-    paper.style.display = 'flex';
-    paper.style.alignItems = 'center';
-    paper.style.justifyContent = 'center';
-    paper.style.color = '#999';
+    paper.style.cssText = `width:${viewport.width}px;height:${viewport.height}px;transform-origin:0 0;background:#fff;display:flex;align-items:center;justify-content:center;color:#999`;
     paper.textContent = `Page ${pageNum}`;
     
     const footer = document.createElement('div');
@@ -182,10 +176,7 @@ window.startViewer = async function startViewer(){
     
     const pageWrapper = document.createElement('div');
     pageWrapper.className = 'page-wrapper';
-    pageWrapper.style.display = 'flex';
-    pageWrapper.style.flexDirection = 'column';
-    pageWrapper.style.alignItems = 'center';
-    pageWrapper.style.gap = '8px';
+    pageWrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px';
     
     pageDiv.appendChild(paper);
     pageWrapper.appendChild(pageDiv);
@@ -200,259 +191,38 @@ window.startViewer = async function startViewer(){
     return pageWrapper;
   }
 
-  // 全ページのプレースホルダーを先に生成
-  for (let p = 1; p <= pdf.numPages; p++) {
-    const pageWrapper = await createPlaceholderPage(p);
-    container.appendChild(pageWrapper);
-  }
-
-  // 最初の数ページのみ実際にレンダリング
-  for (let p = 1; p <= Math.min(INITIAL_RENDER_PAGES, pdf.numPages); p++) {
-    await renderPageContent(p, pdf, container, allowCopy, curMode);
-  }
-
-  // ページレンダリング関数
-  async function renderPageContent(p, pdf, container, allowCopy, curMode) {
-    // 既存のプレースホルダーを検索
-    const existingPages = container.querySelectorAll('.page');
-    let placeholderWrapper = null;
-    existingPages.forEach(pageDiv => {
-      const pageNum = parseInt(pageDiv.getAttribute('data-page-num'));
-      if (pageNum === p) {
-        placeholderWrapper = pageDiv.closest('.page-wrapper');
+  // 全ページのプレースホルダーをDocumentFragmentでバッチ生成
+  // N回のDOM挿入 → 1回に集約してReflowを最小化
+  {
+    const fragment = document.createDocumentFragment();
+    const PLACEHOLDER_BATCH = 10; // 10ページずつ並列メタデータ取得
+    for (let start = 1; start <= pdf.numPages; start += PLACEHOLDER_BATCH) {
+      const end = Math.min(start + PLACEHOLDER_BATCH, pdf.numPages + 1);
+      const batch = [];
+      for (let p = start; p < end; p++) {
+        batch.push(createPlaceholderPage(p));
       }
-    });
-    
-    let hadShadingError = false;
-    let shadingErrorDetails = null;
-    
-    try {
-      const page = await pdf.getPage(p);
-      const viewport = page.getViewport({ scale: 1.5 });
-      const opList = await page.getOperatorList();
-      const svgGfx = new pdfjsLib.SVGGraphics(page.commonObjs, page.objs);
-      let svg = null;
-      
-      try {
-        svg = await svgGfx.getSVG(opList, viewport);
-      } catch(svgError) {
-        // SVGレンダリング中のShadingエラーを検出
-        if (svgError && svgError.message && svgError.message.includes('Unknown IR type: Shading')) {
-          hadShadingError = true;
-          shadingErrorDetails = {
-            error: svgError,
-            operatorList: opList
-          };
-          
-          // エラー詳細をログ出力
-          console.warn(`Page ${p}: Shading rendering failed - attempting fallback`);
-          console.warn(`Error details:`, svgError.message);
-          
-          // オペレーターリストを解析して問題の文字を特定
-          try {
-            const ops = opList.fnArray || [];
-            const args = opList.argsArray || [];
-            console.group(`Page ${p}: Operator analysis`);
-            
-            ops.forEach((op, idx) => {
-              const opName = pdfjsLib.OPS ? Object.keys(pdfjsLib.OPS).find(k => pdfjsLib.OPS[k] === op) : op;
-              if (opName && (opName.includes('Text') || opName.includes('Font') || opName.includes('Shading'))) {
-                console.log(`Op[${idx}]: ${opName}`, args[idx]);
-              }
-            });
-            console.groupEnd();
-          } catch(e) {
-            console.warn('Could not analyze operator list:', e);
-          }
-          
-          // フォールバック: 空のSVGを作成
-          svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-          svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-          svg.setAttribute('version', '1.1');
-        } else {
-          throw svgError; // 他のエラーは再スロー
-        }
-      }
-
-      // まずテキスト有無を判定
-      let textContent = null; try { textContent = await page.getTextContent(); } catch(e){ console.warn('getTextContent failed for page', p, e); }
-      function looksGoodTextContent(tc){ if (!tc || !tc.items || tc.items.length === 0) return false; const sample = tc.items.slice(0, 20).map(i => i.str).join(''); return /[0-9A-Za-z\u3000-\u30FF\u4E00-\u9E0E0E0]/.test(sample); }
-      
-      // SVG内のtext/tspanのうち、空白以外の文字があり、かつ0x0でないものを確認
-      const svgTextElems = svg.querySelectorAll('text, tspan');
-      let svgHasNonEmptyText = false;
-      for (const n of svgTextElems) {
-        const txt = (n.textContent || '').replace(/\s+/g, '');
-        if (txt.length > 0) {
-          // svg:textが0x0サイズでないかチェック
-          if (n.tagName.toLowerCase().includes('text')) {
-            const bbox = n.getBBox ? n.getBBox() : null;
-            if (bbox && bbox.width === 0 && bbox.height === 0) {
-              continue; // 0x0のtext要素はスキップ
-            }
-          }
-          svgHasNonEmptyText = true;
-          break;
-        }
-      }
-      
-      // SVG内にpath要素が存在し、かつそれがテキスト用と思われるかチェック
-      // (g要素のtransform属性にマイナスのスケールがある場合、テキストの可能性が高い)
-      const svgPathElems = svg.querySelectorAll('path');
-      let hasSvgPaths = false;
-      if (svgPathElems.length > 0) {
-        // path要素の親g要素をチェック
-        for (const pathElem of svgPathElems) {
-          const parentG = pathElem.closest('g');
-          if (parentG) {
-            const transform = parentG.getAttribute('transform');
-            // matrix(a b c d e f)でc(y方向のスケール)が負の場合、テキストの可能性が高い
-            if (transform && /matrix\([^)]*-[\d.]+[^)]*\)/.test(transform)) {
-              hasSvgPaths = true;
-              break;
-            }
-          }
-        }
-      }
-      
-      // テキストレイヤー、SVG内テキスト、またはテキスト用path要素のいずれかがあればSVG描画を使用
-      const hasTextContent = !!(textContent && Array.isArray(textContent.items) && textContent.items.length > 0);
-      const hasAnyText = hasTextContent || svgHasNonEmptyText || hasSvgPaths;
-      // hasText はテキストの存在有無のみで判定（allowCopy はテキストレイヤの表示可否に使う）
-      const hasText = looksGoodTextContent(textContent);
-
-      // ページ要素をこの時点で用意
-      const pageDiv = document.createElement('div');
-      pageDiv.className = 'page';
-      pageDiv.setAttribute('data-page-num', p);
-      pageDiv.setAttribute('data-base-width', viewport.width);
-      pageDiv.setAttribute('data-base-height', viewport.height);
-      // Shadingエラーフラグを保存
-      if (hadShadingError) {
-        pageDiv.setAttribute('data-shading-error', 'true');
-      }
-      pageDiv.style.width = viewport.width + 'px';
-      pageDiv.style.height = viewport.height + 'px';
-      pageDiv.style.transformOrigin = '0 0'; pageDiv.style.overflow = 'visible'; pageDiv.style.display = 'block'; pageDiv.style.position = 'relative';
-      const paper = document.createElement('div');
-      paper.className = 'paper';
-      paper.style.width = viewport.width + 'px';
-      paper.style.height = viewport.height + 'px';
-      paper.style.transformOrigin = '0 0';
-      const footer = document.createElement('div'); footer.className = 'page-footer'; footer.textContent = `Page ${p} / ${pdf.numPages}`;
-      
-      // ページラッパー（page + footer を含む）
-      const pageWrapper = document.createElement('div');
-      pageWrapper.className = 'page-wrapper';
-      pageWrapper.style.display = 'flex';
-      pageWrapper.style.flexDirection = 'column';
-      pageWrapper.style.alignItems = 'center';
-      pageWrapper.style.gap = '8px';
-
-      // 常にSVG描画を使用（allowCopy=false でもベクター表示を維持）
-      if (hasAnyText) {
-        // 即時描画
-        try {
-          svg.style.width = viewport.width + 'px';
-          svg.style.height = viewport.height + 'px';
-          svg.setAttribute('width', viewport.width);
-          svg.setAttribute('height', viewport.height);
-        } catch(_) {}
-        paper.appendChild(svg);
-        pageDiv.appendChild(paper);
-        pageWrapper.appendChild(pageDiv);
-        pageWrapper.appendChild(footer);
-        
-        // プレースホルダーがあれば置き換え、なければ追加
-        if (placeholderWrapper) {
-          placeholderWrapper.replaceWith(pageWrapper);
-        } else {
-          container.appendChild(pageWrapper);
-        }
-
-        // ここから描画後の調整（ダークモードON時のみスマート反転）
-        if (window.__viewer_darkModeEnabled) {
-          window.invertSvgColorsSmart(svg, { satThreshold: 0.15 });
-        }
-        // テキストレイヤ: textContent があれば常に生成（allowCopy=false でもオーバーレイモードのため必要）
-        if (textContent && textContent.items && textContent.items.length > 0) {
-          const wantForceVisible = hadShadingError || (curMode === 'overlay');
-          const overlayColor = window.__viewer_darkModeEnabled ? '#E0E0E0' : '#222222';
-          
-          // Shadingエラー時は詳細ログを出力
-          if (hadShadingError) {
-            console.group(`Page ${p}: Shading fallback - rendering text layer`);
-            console.log('Text items:', textContent.items.length);
-            textContent.items.slice(0, 10).forEach((item, idx) => {
-              console.log(`  [${idx}] "${item.str}" at (${item.transform[4].toFixed(1)}, ${item.transform[5].toFixed(1)})`);
-            });
-            if (textContent.items.length > 10) {
-              console.log(`  ... and ${textContent.items.length - 10} more items`);
-            }
-            console.groupEnd();
-          }
-          
-          // Shadingエラー時はSVGテキストとの重複チェックを無効化(常に表示)
-          const makeTransparent = hadShadingError ? false : true;
-          window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: makeTransparent, color: overlayColor, allowCopy: allowCopy });
-          // ページにallowCopy状態を保存（toolbar.jsで参照）
-          pageDiv.setAttribute('data-allow-copy', allowCopy ? 'true' : 'false');
-          if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
-        }
-        if (window.__viewer_darkModeEnabled && !hadShadingError) {
-          await window.processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
-          try { console.log('ノーマル反転対象です'); } catch(_) {}
-        }
-              } else {
-        // ML完了までDOMに追加しない
-        try {
-          await window.convertPageToPng(page, viewport, paper);
-        } catch (e) {
-          console.warn('convertPageToPng error', e);
-        }
-        pageDiv.appendChild(paper);
-        pageWrapper.appendChild(pageDiv);
-        pageWrapper.appendChild(footer);
-        
-        // プレースホルダーがあれば置き換え、なければ追加
-        if (placeholderWrapper) {
-          placeholderWrapper.replaceWith(pageWrapper);
-        } else {
-          container.appendChild(pageWrapper);
-        }
-      }
-      if (hasText && !hadShadingError) {
-        const wantForceVisible = (curMode === 'overlay');
-        const overlayColor2 = window.__viewer_darkModeEnabled ? '#E0E0E0' : '#222222';
-        window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: overlayColor2, allowCopy: allowCopy });
-        // ページにallowCopy状態を保存（toolbar.jsで参照）
-        pageDiv.setAttribute('data-allow-copy', allowCopy ? 'true' : 'false');
-        if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
-      }
-
-      // 以降の二重処理を削除(上で分岐済み)
-      
-      // レンダリング完了後、ページオブジェクトをクリーンアップ
-      try { page.cleanup(); } catch(_) {}
-
-    } catch(err){ 
-      console.error(`Error rendering page ${p}`, err);
+      const wrappers = await Promise.all(batch);
+      for (const w of wrappers) fragment.appendChild(w);
     }
-  }
-  
-  // レンダリング済みページを追跡
-  window.__viewer_renderedPages = new Set();
-  for (let i = 1; i <= Math.min(INITIAL_RENDER_PAGES, pdf.numPages); i++) {
-    window.__viewer_renderedPages.add(i);
+    container.appendChild(fragment); // 1回のDOM挿入でReflow最小化
   }
 
+  // レンダリング済みページを追跡（遅延レンダリングシステム用）
+  window.__viewer_renderedPages = new Set();
+  
   // 遅延レンダリングシステム（メモリ削減）
-  let renderDebounceTimer = null;
   const renderQueue = new Set();
   let isRendering = false;
   
   async function processRenderQueue() {
     if (isRendering || renderQueue.size === 0) return;
+    // If a user is actively zooming, defer full-page rendering until zoom finishes.
+    if (window.__viewer_isZooming) {
+      // Retry on next animation frame; this keeps the queue alive but avoids heavy work during zoom.
+      requestAnimationFrame(() => processRenderQueue());
+      return;
+    }
     isRendering = true;
     
     const pageNum = Array.from(renderQueue)[0];
@@ -472,131 +242,67 @@ window.startViewer = async function startViewer(){
       requestAnimationFrame(() => processRenderQueue());
     }
   }
-  
-  function updateVisiblePages() {
-    if (renderDebounceTimer) {
-      clearTimeout(renderDebounceTimer);
-    }
-    renderDebounceTimer = setTimeout(async () => {
-      const wrapper = ui.wrapper;
-      const viewportTop = wrapper.scrollTop;
-      const viewportBottom = viewportTop + wrapper.clientHeight;
-      const RENDER_MARGIN = 5000; // プリレンダリングマージン（ピクセル）
-      const UNLOAD_MARGIN = 10000; // アンロードマージン（ピクセル）
-      
-      const pages = ui.pagesHolder.querySelectorAll('.page');
-      const visiblePages = [];
-      const farPages = [];
-      
-      pages.forEach((pageDiv) => {
-        const pageNum = parseInt(pageDiv.getAttribute('data-page-num'));
-        if (!pageNum) return;
-        
-        const rect = pageDiv.getBoundingClientRect();
-        const wrapperRect = wrapper.getBoundingClientRect();
-        const pageTop = rect.top - wrapperRect.top + viewportTop;
-        const pageBottom = pageTop + rect.height;
-        
-        const isVisible = pageBottom >= viewportTop - RENDER_MARGIN &&
-                         pageTop <= viewportBottom + RENDER_MARGIN;
-        const isFar = pageBottom < viewportTop - UNLOAD_MARGIN ||
-                     pageTop > viewportBottom + UNLOAD_MARGIN;
-        
-        if (isVisible && !window.__viewer_renderedPages.has(pageNum)) {
-          visiblePages.push(pageNum);
-        } else if (isFar && window.__viewer_renderedPages.has(pageNum)) {
-          farPages.push({ pageNum, pageDiv });
-        }
-      });
-      
-      // 可視範囲のページをレンダリングキューに追加
-      visiblePages.forEach(pageNum => {
-        renderQueue.add(pageNum);
-      });
-      
-      // 遠くのページをアンロード（メモリ削減）
-      for (const { pageNum, pageDiv } of farPages) {
-        const isPlaceholder = pageDiv.getAttribute('data-placeholder') === 'true';
-        if (!isPlaceholder) {
-          // 実際のコンテンツをプレースホルダーに置き換え
-          const pageWrapper = pageDiv.closest('.page-wrapper');
-          if (pageWrapper) {
-            const newPlaceholder = await createPlaceholderPage(pageNum);
-            pageWrapper.replaceWith(newPlaceholder);
-            window.__viewer_renderedPages.delete(pageNum);
-            console.log(`Unloaded page ${pageNum} to save memory`);
-          }
-        }
-      }
-      
-      // レンダリングキュー処理開始
-      processRenderQueue();
-    }, 150); // 150msのデバウンス
-  }
-  
-  // スクロールイベントリスナーを追加
+
+  // ページレンダリング関数は page-render.js に外部化済み
+  // window.renderPageContent(p, pdf, container, allowCopy, curMode) を使用
+  const renderPageContent = window.renderPageContent;
+
+  // IntersectionObserverによる遅延レンダリング
+  // scroll + getBoundingClientRect方式に比べ、強制レイアウト（Reflow）を回避
+  let pageObserver = null;
   try {
-    ui.wrapper.addEventListener('scroll', updateVisiblePages, { passive: true });
-    // 初期状態で一度実行
-    updateVisiblePages();
+    pageObserver = new IntersectionObserver((entries) => {
+      let hasNewPages = false;
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const pageDiv = entry.target;
+        const pageNum = parseInt(pageDiv.getAttribute('data-page-num'));
+        if (!pageNum || window.__viewer_renderedPages.has(pageNum)) continue;
+        renderQueue.add(pageNum);
+        hasNewPages = true;
+      }
+      if (hasNewPages) processRenderQueue();
+    }, {
+      root: ui.wrapper,
+      rootMargin: '5000px 0px', // プリレンダリング領域（上下5000px）
+      threshold: 0
+    });
+    
+    // 全プレースホルダーページを監視開始
+    container.querySelectorAll('.page').forEach(pageDiv => {
+      pageObserver.observe(pageDiv);
+    });
   } catch(e) {
-    console.warn('Failed to setup visible page optimization:', e);
+    console.warn('IntersectionObserver setup failed:', e);
   }
 
-  // バックグラウンド読み込みシステム（初期ロード完了後、3ページずつ順番に読み込み）
-  let backgroundRenderNextPage = INITIAL_RENDER_PAGES + 1; // 次にバックグラウンドで読み込むページ番号
-  let isBackgroundRendering = false;
-  
-  async function processBackgroundRendering() {
-    if (isBackgroundRendering || backgroundRenderNextPage > pdf.numPages) {
-      return; // 既に全ページをレンダリング完了
+  // 初期ロード: IntersectionObserverが検出したページをレンダリング
+  // （全ページ一括ではなく、可視ページのみ優先処理 → 大規模PDF高速化）
+  async function performInitialRender() {
+    // 次フレームまで待機（DOM配置完了・IO発火を待つ）
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    
+    // IOで既にキューにページがあれば処理開始
+    if (renderQueue.size > 0) {
+      processRenderQueue();
+      return;
     }
     
-    isBackgroundRendering = true;
-    const batchSize = RENDER_PAGES; // 3ページずつ読み込む
-    
-    try {
-      // 3ページずつレンダリング
-      for (let i = 0; i < batchSize && backgroundRenderNextPage <= pdf.numPages; i++) {
-        const pageNum = backgroundRenderNextPage;
-        backgroundRenderNextPage++;
-        
-        try {
-          await renderPageContent(pageNum, pdf, container, allowCopy, curMode);
-          window.__viewer_renderedPages.add(pageNum);
-          console.log(`Background rendered page ${pageNum}`);
-        } catch(e) {
-          console.error(`Failed to background render page ${pageNum}:`, e);
-        }
-        
-        // 次のページへ進む前に少し待機（UI操作のブロッキングを回避）
-        await new Promise(resolve => setTimeout(resolve, 50));
+    // IOが未発火の場合のフォールバック: 最初の数ページを手動キュー追加
+    const FALLBACK_PAGES = Math.min(5, pdf.numPages);
+    for (let p = 1; p <= FALLBACK_PAGES; p++) {
+      if (!window.__viewer_renderedPages.has(p)) {
+        renderQueue.add(p);
       }
-    } catch(e) {
-      console.error('Background rendering error:', e);
     }
-    
-    isBackgroundRendering = false;
-    
-    // さらにページがあれば、次のバッチをスケジュール
-    if (backgroundRenderNextPage <= pdf.numPages) {
-      // requestIdleCallback が利用可能ならそれを使用、なければ setTimeout を使用
-      if (typeof requestIdleCallback !== 'undefined') {
-        requestIdleCallback(() => processBackgroundRendering(), { timeout: 2000 });
-      } else {
-        setTimeout(() => processBackgroundRendering(), 500);
-      }
-    } else {
-      console.log('All pages background rendering completed');
-    }
+    processRenderQueue();
   }
   
-  // バックグラウンド読み込み開始
+  // 初期レンダリング開始（非同期、次フレームで実行）
   try {
-    // 初期表示完了後、バックグラウンド読み込みを開始
-    setTimeout(() => processBackgroundRendering(), 500);
+    setTimeout(() => performInitialRender(), 50);
   } catch(e) {
-    console.warn('Failed to start background rendering:', e);
+    console.warn('Failed to perform initial render:', e);
   }
 
   // 配線後に初期スケール/モードを適用
@@ -610,15 +316,7 @@ window.startViewer = async function startViewer(){
   // ページレンダリングループ内でshouldApplyDarkModeInitiallyに基づいて処理されている
 
   window.viewerCleanup = () => { 
-    if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
-    // バックグラウンド読み込みを停止するフラグを設定
-    backgroundRenderNextPage = pdf.numPages + 1; // 次のページが存在しない状態に設定
-    isBackgroundRendering = true; // 処理中状態を維持して新たな処理を開始しない
-    if (removeCopyBlockers) removeCopyBlockers(); 
-    for (const v of window.objectUrlMap.values()) { 
-      if (v && v.url && v.url.startsWith('blob:')) URL.revokeObjectURL(v.url); 
-    } 
-    window.objectUrlMap.clear(); 
+    if (pageObserver) { pageObserver.disconnect(); pageObserver = null; }
   };
   window.viewerPdf = pdf;
 
