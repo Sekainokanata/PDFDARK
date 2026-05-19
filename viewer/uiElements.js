@@ -316,3 +316,43 @@ window.createPageHolder = function createPageHolder() {
   pagesHolder.style.width = '100%';
   return pagesHolder;
 };
+
+/**
+ * UI全体を初期化してグローバルに登録
+ * @param {string} pdftitle - PDF タイトル
+ * @returns {Object} window.__viewer_ui
+ */
+window.initializeUI = function initializeUI(pdftitle) {
+  const toolbarUI = window.createToolbar(pdftitle);
+  const pagesHolder = window.createPageHolder();
+
+  // グローバルUIオブジェクトにまとめる
+  window.__viewer_ui = {
+    toolbar: toolbarUI.toolbar,
+    pagesHolder,
+    pageTotal: toolbarUI.pageTotal,
+    pageInput: toolbarUI.pageInput,
+    btnZoomIn: toolbarUI.btnZoomIn,
+    btnZoomOut: toolbarUI.btnZoomOut,
+    zoomVal: toolbarUI.zoomVal,
+    btnFitWidth: toolbarUI.btnFitWidth,
+    btnFitPage: toolbarUI.btnFitPage,
+    btnDownload: toolbarUI.btnDownload,
+    btnHighlightToggle: toolbarUI.btnHighlightToggle,
+    btnDarkmode: toolbarUI.btnDarkmode,
+    btnAjustFont: toolbarUI.btnAjustFont,
+    yellowHighlight: toolbarUI.yellowHighlight,
+    lightgreenHighlight: toolbarUI.lightgreenHighlight,
+    skyblueHighlight: toolbarUI.skyblueHighlight,
+    pinkHighlight: toolbarUI.pinkHighlight,
+    redHighlight: toolbarUI.redHighlight,
+    blueHighlight: toolbarUI.blueHighlight,
+    greenHighlight: toolbarUI.greenHighlight,
+    purpleHighlight: toolbarUI.purpleHighlight,
+    // 互換: 旧コード（toolbar.js）が参照する名称に合わせたエイリアス
+    get btnSvgMode(){ return this.btnDarkmode; },
+    get btnOverlayMode(){ return this.btnAjustFont; }
+  };
+
+  return window.__viewer_ui;
+};

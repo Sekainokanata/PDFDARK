@@ -1,15 +1,10 @@
 // shell.js
 // UIシェルの構築: ツールバー、ラッパー、ページホルダーのDOM生成
+// UI要素作成と初期化は uiElements.js に分割
 
 
 window.setupShell = function setupShell(origContainer) {
   const containerParent = origContainer.parentElement || document.body;
-
-  const shell = document.createElement('div');
-  shell.id = 'viewer-shell';
-  shell.style.height = '100vh';
-  shell.style.display = 'flex';
-  shell.style.flexDirection = 'column';
 
   // PDFタイトルを取得
   const params = new URLSearchParams(location.search);
@@ -26,11 +21,17 @@ window.setupShell = function setupShell(origContainer) {
     }
   }
 
-  // UI要素を作成（uiElements.js から）
-  const toolbarUI = window.createToolbar(pdftitle);
-  const pagesHolder = window.createPageHolder();
+  // UI初期化（uiElements.js）- グローバル登録も含む
+  const ui = window.initializeUI(pdftitle);
 
-  // ラッパー（スクロール可能なコンテナ）を作成
+  // DOM構築
+  const shell = document.createElement('div');
+  shell.id = 'viewer-shell';
+  shell.style.height = '100vh';
+  shell.style.display = 'flex';
+  shell.style.flexDirection = 'column';
+
+  // ラッパー（スクロール可能なコンテナ）
   const wrapper = document.createElement('div');
   wrapper.id = 'viewer-container-wrapper';
   Object.assign(wrapper.style, {
@@ -43,40 +44,16 @@ window.setupShell = function setupShell(origContainer) {
   });
 
   // 要素を組み立て
-  wrapper.appendChild(pagesHolder);
-  shell.appendChild(toolbarUI.toolbar);
+  wrapper.appendChild(ui.pagesHolder);
+  shell.appendChild(ui.toolbar);
   shell.appendChild(wrapper);
 
+  // DOM置換
   containerParent.replaceChild(shell, origContainer);
 
-  // グローバルUIオブジェクトにまとめる
-  window.__viewer_ui = {
-    shell,
-    toolbar: toolbarUI.toolbar,
-    wrapper,
-    pagesHolder,
-    pageTotal: toolbarUI.pageTotal,
-    pageInput: toolbarUI.pageInput,
-    btnZoomIn: toolbarUI.btnZoomIn,
-    btnZoomOut: toolbarUI.btnZoomOut,
-    zoomVal: toolbarUI.zoomVal,
-    btnFitWidth: toolbarUI.btnFitWidth,
-    btnFitPage: toolbarUI.btnFitPage,
-    btnDownload: toolbarUI.btnDownload,
-    btnHighlightToggle: toolbarUI.btnHighlightToggle,
-    btnDarkmode: toolbarUI.btnDarkmode,
-    btnAjustFont: toolbarUI.btnAjustFont,
-    yellowHighlight: toolbarUI.yellowHighlight,
-    lightgreenHighlight: toolbarUI.lightgreenHighlight,
-    skyblueHighlight: toolbarUI.skyblueHighlight,
-    pinkHighlight: toolbarUI.pinkHighlight,
-    redHighlight: toolbarUI.redHighlight,
-    blueHighlight: toolbarUI.blueHighlight,
-    greenHighlight: toolbarUI.greenHighlight,
-    purpleHighlight: toolbarUI.purpleHighlight,
-    get btnSvgMode(){ return this.btnDarkmode; },
-    get btnOverlayMode(){ return this.btnAjustFont; }
-  };
+  // グローバルUIにシェル情報を追加
+  ui.shell = shell;
+  ui.wrapper = wrapper;
 
-  return window.__viewer_ui;
+  return ui;
 };
