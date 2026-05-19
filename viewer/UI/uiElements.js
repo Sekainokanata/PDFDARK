@@ -349,7 +349,6 @@ window.initializeUI = function initializeUI(pdftitle) {
     blueHighlight: toolbarUI.blueHighlight,
     greenHighlight: toolbarUI.greenHighlight,
     purpleHighlight: toolbarUI.purpleHighlight,
-    // 互換: 旧コード（toolbar.js）が参照する名称に合わせたエイリアス
     get btnSvgMode(){ return this.btnDarkmode; },
     get btnOverlayMode(){ return this.btnAjustFont; }
   };
