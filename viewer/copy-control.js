@@ -28,14 +28,29 @@ window.detectCopyPermission = async function detectCopyPermission(pdfDoc) {
 };
 
 window.installCopyBlockers = function installCopyBlockers(rootEl) {
-  rootEl.style.userSelect = 'none'; rootEl.style.webkitUserSelect = 'none'; rootEl.style.MozUserSelect = 'none';
-  function onCopy(e) { e.preventDefault(); try { e.clipboardData.setData('text/plain', ''); } catch (_) {} return false; }
-  document.addEventListener('copy', onCopy); document.addEventListener('cut', onCopy);
+  rootEl.style.userSelect = 'none';
+  rootEl.style.webkitUserSelect = 'none';
+  rootEl.style.MozUserSelect = 'none';
+  function onCopy(e) { 
+    e.preventDefault();
+    try { 
+      e.clipboardData.setData('text/plain', ''); 
+    }
+
+    catch (_) {}
+
+    return false; 
+  }
+  document.addEventListener('copy', onCopy);
+  document.addEventListener('cut', onCopy);
   const onContext = (e) => e.preventDefault();
   rootEl.addEventListener('contextmenu', onContext);
   return () => {
-    document.removeEventListener('copy', onCopy); document.removeEventListener('cut', onCopy);
+    document.removeEventListener('copy', onCopy);
+    document.removeEventListener('cut', onCopy);
     rootEl.removeEventListener('contextmenu', onContext);
-    rootEl.style.userSelect = ''; rootEl.style.webkitUserSelect = ''; rootEl.style.MozUserSelect = '';
+    rootEl.style.userSelect = '';
+    rootEl.style.webkitUserSelect = '';
+    rootEl.style.MozUserSelect = '';
   };
 };
