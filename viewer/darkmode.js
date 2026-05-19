@@ -54,7 +54,10 @@ window.__viewer_applyDarkMode = async function __viewer_applyDarkMode(enabled){
     
     // 現在のモード（overlay/svg）を取得
     let currentMode = 'svg';
-    try { currentMode = localStorage.getItem('viewerTextMode') || 'svg'; } catch(_) {}
+    try { 
+      currentMode = localStorage.getItem('viewerTextMode') || 'svg'; 
+    } 
+    catch(_) {}
     
     pages.forEach(pageDiv => {
       const paper = pageDiv.querySelector('.paper');
