@@ -1,0 +1,26 @@
+┌─────────────────────────────────────────────────────────┐
+│                 【エントリーポイント】                    │
+│  viewer/main.js (全体の統括・PDF読み込み・遅延描画制御)    │
+└─┬───────────────────────────────────────────────────────┘
+  │
+  ├─▶ [1. UI・画面構築（枠組み）：UI]
+  │     ├─ UI/shell.js       (全体のDOM構築)         
+  │     └─ UI/uiElements.js  (各種UIパーツ作成関数)  
+  │
+  ├─▶ [2. ツールバー・操作系：toolbar+ctrl]
+  │     ├─ toolbar/toolbar.js     (ツールバーのボタン統括)
+  │     ├─ toolbar/zoom.js        (ズーム倍率の制御)      
+  │     ├─ toolbar/scroll.js      (スクロール制御)        
+  │     └─ toolbar/text-mode.js   (テキスト表示モード切替)
+  │
+  ├─▶ [3. ページレンダリング系（中核）：page_rendering]
+  │     └─ page_rendering/page-render.js (個別ページの描画処理)  
+  │           ├──▶ page_rendering/rendering_function/svg-invert.js    (SVGの色反転)
+  │           ├──▶ page_rendering/rendering_function/image-process.js (画像処理・写真検出)
+  │           ├──▶ page_rendering/rendering_function/text-layer.js    (テキストレイヤ生成)
+  │           └──▶ page_rendering/rendering_function/highlight.js     (ハイライト色の変換)
+  │
+  ├─▶ [4. グローバル機能・ユーティリティ：Utility]
+  │     ├─ Utility/darkmode.js    (ダークモードの状態管理と適用)
+  │     ├─ Utility/download.js    (PDFのダウンロード処理)
+  │     └─ Utility/copy-control.js(コピー権限の制御・禁止処理)

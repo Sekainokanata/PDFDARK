@@ -18,19 +18,27 @@
   <!-- OpenCV.js はサンドボックス iframe 側で読み込みます（拡張ページでは読み込まない） -->
 
   <!-- 2) 分割した viewer スクリプト群（依存順に読み込み） -->
-  <script src="viewer/scroll.js"></script>          <!-- スクロールユーティリティ -->
-  <script src="viewer/shell.js"></script>           <!-- DOM 構築（setupShell） -->
-  <script src="viewer/download.js"></script>        <!-- ダウンロード処理 -->
-  <script src="viewer/copy-control.js"></script>    <!-- コピー権限制御 -->
-  <script src="viewer/svg-invert.js"></script>      <!-- SVG 色反転 -->
-  <script src="viewer/text-layer.js"></script>      <!-- テキストレイヤ生成 -->
-  <script src="viewer/image-process.js"></script>   <!-- 画像処理・写真領域検出 -->
-  <script src="viewer/darkmode.js"></script>        <!-- ダークモード状態・適用 -->
-  <script src="viewer/highlight.js"></script>       <!-- ハイライト色変換 -->
-  <script src="viewer/zoom.js"></script>            <!-- ズーム制御 -->
-  <script src="viewer/text-mode.js"></script>       <!-- テキスト表示モード切替 -->
-  <script src="viewer/page-render.js"></script>     <!-- 個別ページレンダリング -->
-  <script src="viewer/toolbar.js"></script>         <!-- ツールバー統括・ページナビ -->
+  <!-- [1. UI・画面構築] -->
+  <script src="viewer/UI/uiElements.js"></script>      <!-- UI要素作成関数 -->
+  <script src="viewer/UI/shell.js"></script>           <!-- DOM 構築（setupShell） -->
+
+  <!-- [2. ツールバー・操作系] -->
+  <script src="viewer/toolbar+ctrl/scroll.js"></script>     <!-- スクロール制御 -->
+  <script src="viewer/toolbar+ctrl/zoom.js"></script>       <!-- ズーム制御 -->
+  <script src="viewer/toolbar+ctrl/text-mode.js"></script>  <!-- テキスト表示モード切替 -->
+  <script src="viewer/toolbar+ctrl/toolbar.js"></script>    <!-- ツールバー統括・ページナビ -->
+
+  <!-- [3. ページレンダリング系（中核）] -->
+  <script src="viewer/page_rendering/rendering_function/svg-invert.js"></script>      <!-- SVG 色反転 -->
+  <script src="viewer/page_rendering/rendering_function/image-process.js"></script>   <!-- 画像処理・写真領域検出 -->
+  <script src="viewer/page_rendering/rendering_function/text-layer.js"></script>      <!-- テキストレイヤ生成 -->
+  <script src="viewer/page_rendering/rendering_function/highlight.js"></script>       <!-- ハイライト色変換 -->
+  <script src="viewer/page_rendering/page-render.js"></script>     <!-- 個別ページレンダリング -->
+
+  <!-- [4. グローバル機能・ユーティリティ] -->
+  <script src="viewer/Utility/darkmode.js"></script>    <!-- ダークモード状態・適用 -->
+  <script src="viewer/Utility/download.js"></script>    <!-- ダウンロード処理 -->
+  <script src="viewer/Utility/copy-control.js"></script>    <!-- コピー権限制御 -->
   <script src="viewer/main.js"></script>            <!-- エントリーポイント（startViewer） -->
 
   <!-- 3) viewer-run.js: workerSrc 設定 & startViewer 実行（従来通り） -->
