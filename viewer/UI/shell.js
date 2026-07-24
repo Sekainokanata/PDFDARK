@@ -34,11 +34,14 @@ window.setupShell = function setupShell(origContainer) {
   // ラッパー（スクロール可能なコンテナ）
   const wrapper = document.createElement('div');
   wrapper.id = 'viewer-container-wrapper';
+  // display:'block'だとjustifyContentが無効化され、zoom.js側の余白最小化ロジックが機能しないためflexにする
   Object.assign(wrapper.style, {
     flex: '1 1 auto',
     overflowX: 'auto',
     overflowY: 'auto',
-    display: 'block',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'flex-start',
     padding: '20px',
     background: '#282828'
   });

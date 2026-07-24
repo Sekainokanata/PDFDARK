@@ -313,7 +313,8 @@ window.createPageHolder = function createPageHolder() {
   pagesHolder.style.flexDirection = 'column';
   pagesHolder.style.gap = '3px';
   pagesHolder.style.alignItems = 'center';
-  pagesHolder.style.width = '100%';
+  // 幅を100%固定にするとズーム時の実コンテンツ幅の計測(offsetWidth)が狂うため、内容にフィットさせる
+  pagesHolder.style.width = 'fit-content';
   return pagesHolder;
 };
 
