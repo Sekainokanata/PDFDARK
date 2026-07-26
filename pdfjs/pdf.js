@@ -16535,7 +16535,9 @@ exports.SVGGraphics = SVGGraphics;
       const width = imgData.width;
       const height = imgData.height;
       let bitDepth, colorType, lineSize;
-      const bytes = imgData.data;
+      // タイリングパターン内の画像マスクでは imgData.data が Array のまま渡ることがあり、
+      // subarray() を持たず TypeError になるため Uint8Array に変換する
+      const bytes = typeof imgData.data.subarray === "function" ? imgData.data : Uint8Array.from(imgData.data);
 
       switch (kind) {
         case _util.ImageKind.GRAYSCALE_1BPP:
