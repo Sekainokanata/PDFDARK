@@ -39,8 +39,8 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   const url = tab.url;
   if (!url) return; // url が undefined の場合は何もしない
 
-  // ビューアーの URL 末尾に元の .pdf が残るため、再転送を防ぐ。
-  if (url.startsWith(chrome.runtime.getURL('viewer.html'))) return;
+  // ビューア自身のURL(viewer.html?file=...xxx.pdf)も下の正規表現に一致し、無限リダイレクトになるため除外
+  if (url.startsWith(chrome.runtime.getURL(''))) return;
 
   if (!url.match(/\.pdf(\?|$)/i)) {
     return; // PDFじゃなければ無視
