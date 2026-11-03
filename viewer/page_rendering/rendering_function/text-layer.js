@@ -3,7 +3,8 @@
 
 window.renderTextLayerFromTextContent = function renderTextLayerFromTextContent(textContent, viewport, pageDiv, options = {}) {
   options = Object.assign({ forceVisible: false, makeTransparentIfSvgTextExists: true, color: '#E0E0E0', zIndex: 3000, allowCopy: false }, options);
-  const paper = pageDiv.querySelector('.paper') || pageDiv; if (getComputedStyle(paper).position === 'static') paper.style.position = 'relative';
+  const paper = pageDiv.querySelector('.paper') || pageDiv;
+  if (!paper.isConnected || getComputedStyle(paper).position === 'static') paper.style.position = 'relative';
   // 既存の textLayer があれば除去（重複生成を防止）
   try { const existing = paper.querySelector('.textLayer'); if (existing) existing.remove(); } catch(_) {}
   const textLayer = document.createElement('div'); textLayer.className = 'textLayer';

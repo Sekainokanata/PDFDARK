@@ -3,6 +3,7 @@
 
 
 window.startViewer = async function startViewer(){
+  window.performance?.mark?.('pdfdark:start');
   // pdf.worker.js / cmaps のパスを拡張内の URL で設定
   try { 
     pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('pdfjs/pdf.worker.js'); 
@@ -38,23 +39,32 @@ window.startViewer = async function startViewer(){
     return; 
   }
 
-  let resp; 
-  try { 
-    resp = await fetch(file); 
-    if (!resp.ok) {
-      throw new Error('Failed to fetch PDF: ' + resp.status); 
-    }
-  }
-  catch(e){ 
-    origContainer.textContent = 'Fetch error: ' + e.message; 
-    return; 
-  }
-  const arrayBuffer = await resp.arrayBuffer();
-  // pdfArrayBufferは保持せずメモリ削減（必要時に再フェッチ）
   window.__viewer_pdfUrl = file;
-
-  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, cMapUrl: cMapUrlForExtension, cMapPacked: true, useWorkerFetch: true });
-  const pdf = await loadingTask.promise;
+  const documentOptions = { cMapUrl: cMapUrlForExtension, cMapPacked: true, useWorkerFetch: true };
+  let pdf;
+  try {
+    if (/^https?:\/\//i.test(file)) {
+      // PDF.js が Range/streaming に対応したサーバーから必要部分を取得する。
+      const task = pdfjsLib.getDocument({ ...documentOptions, url: file });
+      try {
+        pdf = await task.promise;
+      } catch (urlError) {
+        try { await task.destroy(); } catch (_) {}
+        console.warn('URL loading failed; retrying with fetch:', urlError);
+      }
+    }
+    if (!pdf) {
+      const response = await fetch(file);
+      if (!response.ok) throw new Error('Failed to fetch PDF: ' + response.status);
+      const data = await response.arrayBuffer();
+      pdf = await pdfjsLib.getDocument({ ...documentOptions, data }).promise;
+    }
+  } catch (error) {
+    origContainer.textContent = 'PDF loading error: ' + error.message;
+    return;
+  }
+  window.performance?.mark?.('pdfdark:document-ready');
+  window.performance?.measure?.('pdfdark:document-load', 'pdfdark:start', 'pdfdark:document-ready');
   window.viewerPdf = pdf;
 
   origContainer.innerHTML = '';
@@ -140,21 +150,21 @@ window.startViewer = async function startViewer(){
     } 
   })();
 
-  // ダークモードの初期状態を先に適用（ページレンダリング前）
-  // これにより、初回起動時でもダークモードがONの場合、正しく色反転される
-  const shouldApplyDarkModeInitially = window.__viewer_darkModeEnabled;
-
-  // メモリ削減: 初期表示は最初の3ページのみレンダリング，残りは10ページずつレンダリング
-  const INITIAL_RENDER_PAGES = 3;
-  const RENDER_PAGES = 10;
-  
   // ページメタデータを保持（遅延レンダリング用）
   window.__viewer_pageMetadata = new Map();
 
   // プレースホルダーページを生成する関数
   async function createPlaceholderPage(pageNum) {
-    const page = await pdf.getPage(pageNum);
-    const viewport = page.getViewport({ scale: 1.5 });
+    let page;
+    let viewport;
+    try {
+      page = await pdf.getPage(pageNum);
+      viewport = page.getViewport({ scale: 1.5 });
+    } catch (error) {
+      if (pageNum === 1) throw error;
+      console.warn(`Could not read page ${pageNum} size; using first page size:`, error);
+      viewport = window.__viewer_pageMetadata.get(1).viewport;
+    }
     
     const pageDiv = document.createElement('div');
     pageDiv.className = 'page';
@@ -163,11 +173,11 @@ window.startViewer = async function startViewer(){
     pageDiv.setAttribute('data-base-height', viewport.height);
     pageDiv.setAttribute('data-placeholder', 'true');
     // cssTextで一括設定（個別style代入による複数Reflow回避）
-    pageDiv.style.cssText = `width:${viewport.width}px;height:${viewport.height}px;transform-origin:0 0;overflow:visible;display:block;position:relative;background:#f0f0f0`;
+    pageDiv.style.cssText = `width:${viewport.width}px;height:${viewport.height}px;transform-origin:0 0;overflow:visible;display:block;position:relative`;
     
     const paper = document.createElement('div');
     paper.className = 'paper';
-    paper.style.cssText = `width:${viewport.width}px;height:${viewport.height}px;transform-origin:0 0;background:#fff;display:flex;align-items:center;justify-content:center;color:#999`;
+    paper.style.cssText = `width:${viewport.width}px;height:${viewport.height}px;transform-origin:0 0;background:${window.__viewer_darkModeEnabled ? '#1e1e1e' : '#fff'};display:flex;align-items:center;justify-content:center;color:#999`;
     paper.textContent = `Page ${pageNum}`;
     
     const footer = document.createElement('div');
@@ -186,34 +196,40 @@ window.startViewer = async function startViewer(){
     window.__viewer_pageMetadata.set(pageNum, { viewport, width: viewport.width, height: viewport.height });
     
     // ページオブジェクトを即座にクリーンアップ
-    try { page.cleanup(); } catch(_) {}
+    try { page?.cleanup(); } catch(_) {}
     
     return pageWrapper;
   }
 
-  // 全ページのプレースホルダーをDocumentFragmentでバッチ生成
-  // N回のDOM挿入 → 1回に集約してReflowを最小化
-  {
-    const fragment = document.createDocumentFragment();
-    const PLACEHOLDER_BATCH = 10; // 10ページずつ並列メタデータ取得
-    for (let start = 1; start <= pdf.numPages; start += PLACEHOLDER_BATCH) {
-      const end = Math.min(start + PLACEHOLDER_BATCH, pdf.numPages + 1);
-      const batch = [];
-      for (let p = start; p < end; p++) {
-        batch.push(createPlaceholderPage(p));
-      }
-      const wrappers = await Promise.all(batch);
-      for (const w of wrappers) fragment.appendChild(w);
-    }
-    container.appendChild(fragment); // 1回のDOM挿入でReflow最小化
-  }
+  // 先頭ページだけ用意し、残りのページ枠は初回描画と並行して追加する。
+  container.appendChild(await createPlaceholderPage(1));
 
   // レンダリング済みページを追跡（遅延レンダリングシステム用）
   window.__viewer_renderedPages = new Set();
   
   // 遅延レンダリングシステム（メモリ削減）
   const renderQueue = new Set();
+  const failedPages = new Set();
   let isRendering = false;
+  let firstPageMeasured = false;
+
+  function nextPageToRender() {
+    const viewport = ui.wrapper.getBoundingClientRect();
+    let bestPage = null;
+    let bestDistance = Infinity;
+    for (const pageNum of renderQueue) {
+      const page = container.querySelector(`.page[data-page-num="${pageNum}"]`);
+      if (!page) continue;
+      const rect = page.getBoundingClientRect();
+      const distance = rect.bottom < viewport.top ? viewport.top - rect.bottom
+        : rect.top > viewport.bottom ? rect.top - viewport.bottom : 0;
+      if (distance < bestDistance) {
+        bestPage = pageNum;
+        bestDistance = distance;
+      }
+    }
+    return bestPage;
+  }
   
   async function processRenderQueue() {
     if (isRendering || renderQueue.size === 0) return;
@@ -225,21 +241,48 @@ window.startViewer = async function startViewer(){
     }
     isRendering = true;
     
-    const pageNum = Array.from(renderQueue)[0];
+    const pageNum = nextPageToRender();
+    if (pageNum === null) {
+      isRendering = false;
+      return;
+    }
     renderQueue.delete(pageNum);
     
     try {
-      await renderPageContent(pageNum, pdf, container, allowCopy, curMode);
+      const result = await renderPageContent(pageNum, pdf, container, allowCopy, curMode);
+      if (result === 'deferred') {
+        renderQueue.add(pageNum);
+        return;
+      }
       window.__viewer_renderedPages.add(pageNum);
+      if (pageNum === 1 && !firstPageMeasured) {
+        firstPageMeasured = true;
+        window.performance?.mark?.('pdfdark:first-page-ready');
+        window.performance?.measure?.('pdfdark:first-page', 'pdfdark:start', 'pdfdark:first-page-ready');
+      }
       console.log(`Lazy rendered page ${pageNum}`);
     } catch(e) {
       console.error(`Failed to render page ${pageNum}:`, e);
-    }
-    
-    isRendering = false;
-    // 次のページをレンダリング
-    if (renderQueue.size > 0) {
-      requestAnimationFrame(() => processRenderQueue());
+      const pageDiv = container.querySelector(`[data-page-num="${pageNum}"]`);
+      const paper = pageDiv?.querySelector('.paper');
+      if (paper) {
+        paper.replaceChildren();
+        const message = document.createElement('span');
+        message.textContent = `ページ ${pageNum} の描画に失敗しました。`;
+        const retry = document.createElement('button');
+        retry.textContent = '再試行';
+        retry.addEventListener('click', () => {
+          retry.disabled = true;
+          failedPages.delete(pageNum);
+          renderQueue.add(pageNum);
+          processRenderQueue();
+        });
+        paper.append(message, retry);
+      }
+      failedPages.add(pageNum);
+    } finally {
+      isRendering = false;
+      if (renderQueue.size > 0) requestAnimationFrame(() => processRenderQueue());
     }
   }
 
@@ -257,63 +300,92 @@ window.startViewer = async function startViewer(){
         if (!entry.isIntersecting) continue;
         const pageDiv = entry.target;
         const pageNum = parseInt(pageDiv.getAttribute('data-page-num'));
-        if (!pageNum || window.__viewer_renderedPages.has(pageNum)) continue;
+        if (!pageNum || failedPages.has(pageNum) || window.__viewer_renderedPages.has(pageNum)) continue;
         renderQueue.add(pageNum);
         hasNewPages = true;
       }
       if (hasNewPages) processRenderQueue();
     }, {
       root: ui.wrapper,
-      rootMargin: '5000px 0px', // プリレンダリング領域（上下5000px）
+      rootMargin: `${Math.max(400, ui.wrapper.clientHeight)}px 0px`,
       threshold: 0
     });
     
     // 全プレースホルダーページを監視開始
     container.querySelectorAll('.page').forEach(pageDiv => {
       pageObserver.observe(pageDiv);
+      pageDiv.__viewer_observed = true;
     });
   } catch(e) {
     console.warn('IntersectionObserver setup failed:', e);
   }
 
-  // 初期ロード: IntersectionObserverが検出したページをレンダリング
-  // （全ページ一括ではなく、可視ページのみ優先処理 → 大規模PDF高速化）
-  async function performInitialRender() {
-    // 次フレームまで待機（DOM配置完了・IO発火を待つ）
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    
-    // IOで既にキューにページがあれば処理開始
-    if (renderQueue.size > 0) {
-      processRenderQueue();
-      return;
-    }
-    
-    // IOが未発火の場合のフォールバック: 最初の数ページを手動キュー追加
-    const FALLBACK_PAGES = Math.min(5, pdf.numPages);
-    for (let p = 1; p <= FALLBACK_PAGES; p++) {
-      if (!window.__viewer_renderedPages.has(p)) {
-        renderQueue.add(p);
+  // 先頭ページは IntersectionObserver の通知を待たずに描画する。
+  renderQueue.add(1);
+  const firstPageRender = processRenderQueue();
+
+  let createdThrough = 1;
+  let requestedThrough = 1;
+  let buildingPlaceholders = false;
+  const pageWaiters = [];
+
+  async function buildPlaceholders() {
+    if (buildingPlaceholders) return;
+    buildingPlaceholders = true;
+    try {
+      while (createdThrough < requestedThrough) {
+        const end = Math.min(createdThrough + 10, requestedThrough);
+        const batch = [];
+        for (let p = createdThrough + 1; p <= end; p++) batch.push(createPlaceholderPage(p));
+        const wrappers = await Promise.all(batch);
+        const fragment = document.createDocumentFragment();
+        for (const pageWrapper of wrappers) fragment.appendChild(pageWrapper);
+        container.appendChild(fragment);
+        createdThrough = end;
+        if (pageObserver) {
+          for (const pageWrapper of wrappers) {
+            const page = pageWrapper.querySelector('.page');
+            pageObserver.observe(page);
+            page.__viewer_observed = true;
+          }
+        }
+        for (let i = pageWaiters.length - 1; i >= 0; i--) {
+          if (pageWaiters[i].page <= createdThrough) {
+            pageWaiters[i].resolve();
+            pageWaiters.splice(i, 1);
+          }
+        }
+        // DOMを描画できるよう、ページ枠の追加をフレームごとに区切る。
+        await new Promise(resolve => requestAnimationFrame(resolve));
       }
+    } catch (error) {
+      console.error('Could not create page placeholders:', error);
+      for (const waiter of pageWaiters.splice(0)) waiter.reject(error);
+    } finally {
+      buildingPlaceholders = false;
     }
-    processRenderQueue();
-  }
-  
-  // 初期レンダリング開始（非同期、次フレームで実行）
-  try {
-    setTimeout(() => performInitialRender(), 50);
-  } catch(e) {
-    console.warn('Failed to perform initial render:', e);
   }
 
-  // 配線後に初期スケール/モードを適用
-  try { 
-    window.__viewer_applyScaleToAllPages(1.0); 
-  } catch(_) {}
+  window.__viewer_ensurePage = function ensurePage(pageNumber) {
+    const target = Math.min(pdf.numPages, Math.max(1, Math.trunc(pageNumber)));
+    if (!Number.isFinite(target)) return Promise.reject(new Error('Invalid page number'));
+    if (target <= createdThrough) return Promise.resolve();
+    requestedThrough = Math.max(requestedThrough, target);
+    return new Promise((resolve, reject) => {
+      pageWaiters.push({ page: target, resolve, reject });
+      buildPlaceholders();
+    });
+  };
+
+  // 先頭ページの描画を優先し、その後に残りのページ枠を埋める。
+  setTimeout(() => {
+    firstPageRender.finally(() => window.__viewer_ensurePage(pdf.numPages)).catch(console.error);
+  }, 0);
+
+  // 初期倍率は1倍なのでズーム処理を起動しない。
   try { 
     window.__viewer_applyMode(curMode); 
   } catch(_) {}
-  // 初期ダークモード状態適用は不要（ページレンダリング時に既に適用済み）
-  // ページレンダリングループ内でshouldApplyDarkModeInitiallyに基づいて処理されている
 
   window.viewerCleanup = () => { 
     if (pageObserver) { pageObserver.disconnect(); pageObserver = null; }

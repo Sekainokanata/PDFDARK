@@ -3,23 +3,21 @@
 
 window.renderPageContent = async function renderPageContent(p, pdf, container, allowCopy, curMode) {
     // 二重レンダリング防止
-    if (window.__viewer_renderedPages && window.__viewer_renderedPages.has(p)) return;
+    if (window.__viewer_renderedPages && window.__viewer_renderedPages.has(p)) return 'already-rendered';
     
     // 既存のプレースホルダーを検索
-    const existingPages = container.querySelectorAll('.page');
-    let placeholderWrapper = null;
-    existingPages.forEach(pageDiv => {
-      const pageNum = parseInt(pageDiv.getAttribute('data-page-num'));
-      if (pageNum === p) {
-        placeholderWrapper = pageDiv.closest('.page-wrapper');
-      }
-    });
+    const placeholderWrapper = container.querySelector(`.page[data-page-num="${p}"]`)?.closest('.page-wrapper');
     
     let hadShadingError = false;
     let shadingErrorDetails = null;
     
+    let page;
+    let mountedWrapper;
+    let preparedSvg;
+    let stagingHost;
+    const renderDarkMode = window.__viewer_darkModeEnabled;
     try {
-      const page = await pdf.getPage(p);
+      page = await pdf.getPage(p);
       const viewport = page.getViewport({ scale: 1.5 });
       const opList = await page.getOperatorList();
       const svgGfx = new pdfjsLib.SVGGraphics(page.commonObjs, page.objs);
@@ -65,10 +63,10 @@ window.renderPageContent = async function renderPageContent(p, pdf, container, a
           throw svgError; // 他のエラーは再スロー
         }
       }
+      preparedSvg = svg;
 
       // まずテキスト有無を判定
       let textContent = null; try { textContent = await page.getTextContent(); } catch(e){ console.warn('getTextContent failed for page', p, e); }
-      function looksGoodTextContent(tc){ if (!tc || !tc.items || tc.items.length === 0) return false; const sample = tc.items.slice(0, 20).map(i => i.str).join(''); return /[0-9A-Za-z\u3000-\u30FF\u4E00-\u9E0E0E0]/.test(sample); }
       
       // SVG内のtext/tspanのうち、空白以外の文字があり、かつ0x0でないものを確認
       const svgTextElems = svg.querySelectorAll('text, tspan');
@@ -110,8 +108,6 @@ window.renderPageContent = async function renderPageContent(p, pdf, container, a
       // テキストレイヤー、SVG内テキスト、またはテキスト用path要素のいずれかがあればSVG描画を使用
       const hasTextContent = !!(textContent && Array.isArray(textContent.items) && textContent.items.length > 0);
       const hasAnyText = hasTextContent || svgHasNonEmptyText || hasSvgPaths;
-      // hasText はテキストの存在有無のみで判定（allowCopy はテキストレイヤの表示可否に使う）
-      const hasText = looksGoodTextContent(textContent);
 
       // ページ要素をこの時点で用意
       const pageDiv = document.createElement('div');
@@ -126,13 +122,35 @@ window.renderPageContent = async function renderPageContent(p, pdf, container, a
       pageDiv.style.cssText = `width:${viewport.width}px;height:${viewport.height}px;transform-origin:0 0;overflow:visible;display:block;position:relative`;
       const paper = document.createElement('div');
       paper.className = 'paper';
-      paper.style.cssText = `width:${viewport.width}px;height:${viewport.height}px;transform-origin:0 0`;
+      paper.style.cssText = `width:${viewport.width}px;height:${viewport.height}px;transform-origin:0 0;background:${renderDarkMode ? '#1e1e1e' : '#fff'}`;
       const footer = document.createElement('div'); footer.className = 'page-footer'; footer.textContent = `Page ${p} / ${pdf.numPages}`;
       
       // ページラッパー（page + footer を含む）
       const pageWrapper = document.createElement('div');
       pageWrapper.className = 'page-wrapper';
       pageWrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px';
+
+      function updateTextLayer() {
+        let mode = curMode;
+        try { mode = localStorage.getItem('viewerTextMode') || curMode; } catch (_) {}
+        const forceVisible = hadShadingError || mode === 'overlay';
+        window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, {
+          forceVisible,
+          makeTransparentIfSvgTextExists: !hadShadingError,
+          color: window.__viewer_darkModeEnabled ? '#E0E0E0' : '#222222',
+          allowCopy,
+        });
+        pageDiv.setAttribute('data-allow-copy', String(allowCopy));
+        if (forceVisible) {
+          pageDiv.querySelectorAll('svg text, svg tspan').forEach(t => {
+            if (!t.hasAttribute('data-original-fill')) {
+              const fill = t.getAttribute('fill');
+              if (fill) t.setAttribute('data-original-fill', fill);
+            }
+            t.style.visibility = 'hidden';
+          });
+        }
+      }
 
       // 常にSVG描画を使用（allowCopy=false でもベクター表示を維持）
       if (hasAnyText) {
@@ -147,87 +165,51 @@ window.renderPageContent = async function renderPageContent(p, pdf, container, a
         pageDiv.appendChild(paper);
         pageWrapper.appendChild(pageDiv);
         pageWrapper.appendChild(footer);
-        
-        // プレースホルダーがあれば置き換え、なければ追加
-        if (placeholderWrapper) {
-          placeholderWrapper.replaceWith(pageWrapper);
-        } else {
-          container.appendChild(pageWrapper);
-        }
 
-        // ここから描画後の調整（ダークモードON時のみスマート反転）
-        if (window.__viewer_darkModeEnabled) {
+        // computedStyle と SVG の寸法計算を使える状態で、画面には見せない。
+        stagingHost = document.createElement('div');
+        stagingHost.style.cssText = 'position:fixed;left:-100000px;top:0;visibility:hidden;pointer-events:none';
+        stagingHost.appendChild(pageWrapper);
+        document.body.appendChild(stagingHost);
+
+        // 表示する前に色と画像の処理を済ませる。
+        if (renderDarkMode) {
           window.invertSvgColorsSmart(svg, { satThreshold: 0.15 });
         }
-        // テキストレイヤ: textContent があれば常に生成（allowCopy=false でもオーバーレイモードのため必要）
-        if (textContent && textContent.items && textContent.items.length > 0) {
-          const wantForceVisible = hadShadingError || (curMode === 'overlay');
-          const overlayColor = window.__viewer_darkModeEnabled ? '#E0E0E0' : '#222222';
-          
-          // Shadingエラー時は詳細ログを出力
-          if (hadShadingError) {
-            console.group(`Page ${p}: Shading fallback - rendering text layer`);
-            console.log('Text items:', textContent.items.length);
-            textContent.items.slice(0, 10).forEach((item, idx) => {
-              console.log(`  [${idx}] "${item.str}" at (${item.transform[4].toFixed(1)}, ${item.transform[5].toFixed(1)})`);
-            });
-            if (textContent.items.length > 10) {
-              console.log(`  ... and ${textContent.items.length - 10} more items`);
-            }
-            console.groupEnd();
-          }
-          
-          // Shadingエラー時はSVGテキストとの重複チェックを無効化(常に表示)
-          const makeTransparent = hadShadingError ? false : true;
-          window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: makeTransparent, color: overlayColor, allowCopy: allowCopy });
-          // ページにallowCopy状態を保存（toolbar.jsで参照）
-          pageDiv.setAttribute('data-allow-copy', allowCopy ? 'true' : 'false');
-          if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
+        if (renderDarkMode && !hadShadingError) {
+          if (window.__viewer_isZooming) return 'deferred';
+          await window.processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
         }
-        if (window.__viewer_darkModeEnabled && !hadShadingError) {
-          // ズーム中は高品質画像処理をスキップしてパフォーマンス優先
-          if (!window.__viewer_isZooming) {
-            await window.processSvgImagesHighQuality(svg, { imageSatThreshold: 0.08, sampleMax: 200, sampleStep: 6, maxFullSizeForInvert: 2500 });
-            try { console.log('ノーマル反転対象です'); } catch(_) {}
-          } else {
-            console.log(`Page ${p}: Skipped processSvgImagesHighQuality during zoom`);
-          }
-        }
-              } else {
-        // ズーム中はPNG変換をスキップしてパフォーマンス優先
-        if (!window.__viewer_isZooming) {
-          try {
-            await window.convertPageToPng(page, viewport, paper);
-          } catch (e) {
-            console.warn('convertPageToPng error', e);
-          }
-        } else {
-          console.log(`Page ${p}: Skipped convertPageToPng during zoom`);
-        }
+      } else {
+        if (window.__viewer_isZooming) return 'deferred';
+        await window.convertPageToPng(page, viewport, paper);
+        if (!paper.querySelector('canvas')) throw new Error('Canvas rendering produced no content');
         pageDiv.appendChild(paper);
         pageWrapper.appendChild(pageDiv);
         pageWrapper.appendChild(footer);
-        
-        // プレースホルダーがあれば置き換え、なければ追加
-        if (placeholderWrapper) {
-          placeholderWrapper.replaceWith(pageWrapper);
-        } else {
-          container.appendChild(pageWrapper);
-        }
       }
-      if (hasText && !hadShadingError) {
-        const wantForceVisible = (curMode === 'overlay');
-        const overlayColor2 = window.__viewer_darkModeEnabled ? '#E0E0E0' : '#222222';
-        window.renderTextLayerFromTextContent(textContent, viewport, pageDiv, { forceVisible: wantForceVisible, makeTransparentIfSvgTextExists: true, color: overlayColor2, allowCopy: allowCopy });
-        // ページにallowCopy状態を保存（toolbar.jsで参照）
-        pageDiv.setAttribute('data-allow-copy', allowCopy ? 'true' : 'false');
-        if (wantForceVisible) { const svgElem = pageDiv.querySelector('svg'); if (svgElem) { svgElem.querySelectorAll('text, tspan').forEach(t => { if (!t.hasAttribute('data-original-fill')) { const f = t.getAttribute('fill'); if (f) t.setAttribute('data-original-fill', f); } t.style.visibility = 'hidden'; }); } }
+      if (renderDarkMode !== window.__viewer_darkModeEnabled) return 'deferred';
+      if (textContent && textContent.items && textContent.items.length > 0) {
+        updateTextLayer();
       }
-
-      // レンダリング完了後、ページオブジェクトをクリーンアップ
-      try { page.cleanup(); } catch(_) {}
-
-    } catch(err){ 
-      console.error(`Error rendering page ${p}`, err);
+      if (placeholderWrapper) placeholderWrapper.replaceWith(pageWrapper);
+      else container.appendChild(pageWrapper);
+      mountedWrapper = pageWrapper;
+      return 'rendered';
+    } catch (err) {
+      // 元の監視対象を戻し、部分的なページを残さない。
+      if (mountedWrapper && placeholderWrapper) mountedWrapper.replaceWith(placeholderWrapper);
+      else if (mountedWrapper) mountedWrapper.remove();
+      throw err;
+    } finally {
+      stagingHost?.remove();
+      if (!mountedWrapper && preparedSvg && window.objectUrlMap) {
+        preparedSvg.querySelectorAll('image').forEach(image => {
+          const processed = window.objectUrlMap.get(image);
+          if (processed?.url?.startsWith('blob:')) URL.revokeObjectURL(processed.url);
+          window.objectUrlMap.delete(image);
+        });
+      }
+      try { page?.cleanup(); } catch (error) { console.warn('Page cleanup failed', error); }
     }
 };

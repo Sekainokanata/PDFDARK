@@ -8,7 +8,7 @@ window._getWrapperAndPagesHolder = function _getWrapperAndPagesHolder() {
   return { wrapper, pagesHolder, ui };
 };
 
-function goToPage(n){ const { pagesHolder, ui: ui2 } = window._getWrapperAndPagesHolder(); const pages = Array.from(pagesHolder.querySelectorAll('.page')); if (!pages.length) return; const idx = Math.min(Math.max(1, n), pages.length); if (ui2 && ui2.pageInput) ui2.pageInput.value = idx; window.scrollToPageTopByIndex(n, { extraGap: -50, waitForRender: true }); }
+function goToPage(n){ const { pagesHolder, ui: ui2 } = window._getWrapperAndPagesHolder(); const count = window.viewerPdf?.numPages || pagesHolder.querySelectorAll('.page').length; if (!count || !Number.isFinite(n)) return; const idx = Math.min(Math.max(1, n), count); if (ui2 && ui2.pageInput) ui2.pageInput.value = idx; window.scrollToPageTopByIndex(idx, { extraGap: -50, waitForRender: true }); }
 
 window.addEventListener('keydown', (event) => {
   const { wrapper, pagesHolder, ui } = window._getWrapperAndPagesHolder();
@@ -37,11 +37,18 @@ window.addEventListener('keydown', (event) => {
 
 // pageIdx: 1-based
 // options: { behavior:'auto'|'smooth', extraGap: number, waitForRender: boolean }
-window.scrollToPageTopByIndex = function scrollToPageTopByIndex(pageIdx, options = {}) {
+let latestPageNavigation = 0;
+window.scrollToPageTopByIndex = async function scrollToPageTopByIndex(pageIdx, options = {}) {
+  const navigation = ++latestPageNavigation;
   const { wrapper, pagesHolder, ui } = window._getWrapperAndPagesHolder();
   if (!wrapper || !pagesHolder) return;
 
   const idx = Math.max(1, pageIdx);
+  if (typeof window.__viewer_ensurePage === 'function') {
+    try { await window.__viewer_ensurePage(idx); }
+    catch (error) { console.error('Could not prepare requested page:', error); return; }
+  }
+  if (navigation !== latestPageNavigation) return;
   const pages = Array.from(pagesHolder.querySelectorAll('.page'));
   if (idx > pages.length) return;
   const pageDiv = pages[idx - 1];
@@ -51,6 +58,7 @@ window.scrollToPageTopByIndex = function scrollToPageTopByIndex(pageIdx, options
   let contentElem = pageDiv.querySelector('.paper') || pageDiv.querySelector('svg') || pageDiv;
 
   const doScroll = () => {
+    if (navigation !== latestPageNavigation) return;
     if (wrapper === document.body || wrapper === document.documentElement) {
       const rect = contentElem.getBoundingClientRect();
       const toolbarHeight = (ui && ui.toolbar) ? ui.toolbar.getBoundingClientRect().height : 0;
