@@ -7,7 +7,7 @@ async function isExtensionEnabled() {
 // アイコンの状態を更新
 async function updateIcon() {
   const enabled = await isExtensionEnabled();
-  const iconPath = enabled ? "images/darkmode.png" : "images/darkmode.png"; // 必要に応じてOFF用アイコンを別途作成可能
+  const iconPath = "images/icon16.png";
   const title = enabled ? "PDF Dark Viewer (有効)" : "PDF Dark Viewer (無効)";
   
   chrome.action.setIcon({ path: iconPath });
@@ -38,6 +38,9 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
   const url = tab.url;
   if (!url) return; // url が undefined の場合は何もしない
+
+  // ビューアーの URL 末尾に元の .pdf が残るため、再転送を防ぐ。
+  if (url.startsWith(chrome.runtime.getURL('viewer.html'))) return;
 
   if (!url.match(/\.pdf(\?|$)/i)) {
     return; // PDFじゃなければ無視

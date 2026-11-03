@@ -62,6 +62,10 @@ window.__viewer_applyDarkMode = async function __viewer_applyDarkMode(enabled){
     pages.forEach(pageDiv => {
       const paper = pageDiv.querySelector('.paper');
       if (!paper) return;
+      if (pageDiv.hasAttribute('data-placeholder')) {
+        paper.style.background = enabled ? '#1e1e1e' : '#fff';
+        return;
+      }
       const svg = paper.querySelector('svg');
       const canvases = paper.querySelectorAll('canvas');
       const textLayer = pageDiv.querySelector('.textLayer');
