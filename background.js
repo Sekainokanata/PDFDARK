@@ -7,7 +7,7 @@ async function isExtensionEnabled() {
 // アイコンの状態を更新
 async function updateIcon() {
   const enabled = await isExtensionEnabled();
-  const iconPath = "images/icon16.png";
+  const iconPath = enabled ? "images/darkmode.png" : "images/darkmode.png"; // 必要に応じてOFF用アイコンを別途作成可能
   const title = enabled ? "PDF Dark Viewer (有効)" : "PDF Dark Viewer (無効)";
   
   chrome.action.setIcon({ path: iconPath });

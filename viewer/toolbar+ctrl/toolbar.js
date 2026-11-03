@@ -41,7 +41,7 @@ window.wireToolbarLogic = function wireToolbarLogic(fileUrl){
     ui.pageInput.value = Math.round(defaultValue)+1;
   })
 
-  function goToPage(n){ const { pagesHolder, ui: ui2 } = window._getWrapperAndPagesHolder(); const count = window.viewerPdf?.numPages || pagesHolder.querySelectorAll('.page').length; if (!count || !Number.isFinite(n)) return; const idx = Math.min(Math.max(1, n), count); if (ui2 && ui2.pageInput) ui2.pageInput.value = idx; window.scrollToPageTopByIndex(idx, {extraGap: -50, waitForRender: true }); }
+  function goToPage(n){ const { pagesHolder, ui: ui2 } = window._getWrapperAndPagesHolder(); const pages = Array.from(pagesHolder.querySelectorAll('.page')); if (!pages.length) return; const idx = Math.min(Math.max(1, n), pages.length); if (ui2 && ui2.pageInput) ui2.pageInput.value = idx; window.scrollToPageTopByIndex(idx, {extraGap: -50, waitForRender: true }); }
 
   //ui.btnNext.addEventListener('click', () => { goToPage(parseInt(ui.pageInput.value||'1',10) + 1); });
   //ui.btnPrev.addEventListener('click', () => { goToPage(parseInt(ui.pageInput.value||'1',10) - 1); });
